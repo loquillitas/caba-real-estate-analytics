@@ -1,0 +1,446 @@
+"""
+model_venta.py — Modelo de precios de compraventa CABA 2020
+
+QUÉ HACE:
+  1. Carga el CSV limpio de ventas y agrega features de ingeniería
+  2. Entrena XGBoost con optimización bayesiana (Optuna, 50 trials por defecto)
+  3. Exporta un JSON rico con todo lo que necesita el dashboard:
+       - KPIs del mercado
+       - Distribución de precios
+       - Ranking de barrios
+       - Impacto de features clave (precio/m², tipo, superficie cubierta)
+       - Feature importances
+       - Grilla de predicción para el estimador interactivo
+
+DIFERENCIAS RESPECTO AL MODELO DE ALQUILERES:
+  - Sin amenities (el dataset de Properati no los tiene)
+  - property_type como feature adicional (Departamento / PH / Casa)
+  - surface_covered disponible → ratio_cubierto
+  - Target: price_usd como precio de venta total (no mensual)
+  - Datos de 2020
+
+USO:
+  python scripts/model_venta.py
+  python scripts/model_venta.py --fast    # 20 trials (desarrollo)
+  python scripts/model_venta.py --trials 30
+"""
+
+import argparse
+import json
+import warnings
+from pathlib import Path
+
+import numpy as np
+import optuna
+import pandas as pd
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import KFold, train_test_split
+from sklearn.preprocessing import LabelEncoder
+from xgboost import XGBRegressor
+
+warnings.filterwarnings("ignore")
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+BASE_DIR  = Path(__file__).parent.parent
+DATA_PATH = BASE_DIR / "data" / "processed" / "ventas_limpias.csv"
+OUT_JSON  = BASE_DIR / "output" / "results_venta.json"
+OUT_JS    = BASE_DIR / "web" / "data_venta.js"
+OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
+
+PROPERTY_TYPE_LABEL = {
+    "Departamento": "Departamento",
+    "Ph":           "PH",
+    "Casa":         "Casa",
+}
+
+FEATURE_LABELS = {
+    "barrio_enc":        "Barrio",
+    "precio_med_barrio": "Precio mediano del barrio",
+    "m2_total":          "Superficie total (m²)",
+    "m2_cubierto":       "Superficie cubierta (m²)",
+    "ratio_cubierto":    "% superficie cubierta",
+    "ambientes":         "Ambientes",
+    "dormitorios":       "Dormitorios",
+    "banos":             "Baños",
+    "property_enc":      "Tipo de propiedad",
+    "m2_por_ambiente":   "m² por ambiente",
+    "es_monoambiente":   "Es monoambiente",
+    "es_ph":             "Es PH",
+    "es_casa":           "Es Casa",
+}
+
+M2_GRID        = [30, 45, 55, 70, 85, 100, 120, 150, 180, 220]
+AMBIENTES_GRID = [1, 2, 3, 4, 5]
+PROPERTY_TYPES = ["Departamento", "Ph", "Casa"]
+
+
+# ─── Carga y feature engineering ──────────────────────────────────────────────
+
+def load_and_engineer(path: Path) -> tuple[pd.DataFrame, LabelEncoder, LabelEncoder]:
+    df = pd.read_csv(path, low_memory=False)
+
+    df["property_type"] = df["property_type"].str.strip().str.title()
+    df["property_type"] = df["property_type"].replace({"Ph": "Ph"})
+
+    df = df.dropna(subset=["barrio", "ambientes", "m2_total"]).copy()
+
+    mediana_ratio = (
+        df.groupby(["barrio", "property_type"])["ratio_cubierto"]
+        .transform("median")
+    )
+    df["ratio_cubierto"] = df["ratio_cubierto"].fillna(mediana_ratio)
+    df["ratio_cubierto"] = df["ratio_cubierto"].fillna(df["ratio_cubierto"].median())
+
+    df["m2_cubierto"] = df.get("m2_cubierto", pd.Series(dtype=float))
+    df["m2_cubierto"] = df["m2_cubierto"].fillna(df["m2_total"] * df["ratio_cubierto"])
+
+    df["m2_por_ambiente"] = (df["m2_total"] / df["ambientes"]).round(2)
+    df["es_monoambiente"] = (df["ambientes"] == 1).astype(int)
+    df["es_ph"]           = (df["property_type"] == "Ph").astype(int)
+    df["es_casa"]         = (df["property_type"] == "Casa").astype(int)
+
+    le_barrio = LabelEncoder()
+    le_prop   = LabelEncoder()
+    df["barrio_enc"]   = le_barrio.fit_transform(df["barrio"])
+    df["property_enc"] = le_prop.fit_transform(df["property_type"])
+
+    return df, le_barrio, le_prop
+
+
+def get_feature_cols(df: pd.DataFrame) -> list[str]:
+    base = [
+        "barrio_enc", "precio_med_barrio",
+        "m2_total", "m2_cubierto", "ratio_cubierto",
+        "ambientes", "dormitorios", "banos", "property_enc",
+        "m2_por_ambiente", "es_monoambiente", "es_ph", "es_casa",
+    ]
+    return [c for c in base if c in df.columns]
+
+
+# ─── Optimización de hiperparámetros con Optuna ────────────────────────────────
+
+def tune(X_train: pd.DataFrame, y_train_log: pd.Series, n_trials: int) -> dict:
+    def objective(trial):
+        params = {
+            "n_estimators":     trial.suggest_int("n_estimators", 200, 1000),
+            "max_depth":        trial.suggest_int("max_depth", 3, 8),
+            "learning_rate":    trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+            "subsample":        trial.suggest_float("subsample", 0.6, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+            "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
+            "reg_alpha":        trial.suggest_float("reg_alpha", 1e-4, 10.0, log=True),
+            "reg_lambda":       trial.suggest_float("reg_lambda", 1e-4, 10.0, log=True),
+        }
+        kf   = KFold(n_splits=5, shuffle=True, random_state=42)
+        maes = []
+        for tr, va in kf.split(X_train):
+            m = XGBRegressor(**params, random_state=42, n_jobs=-1, verbosity=0)
+            m.fit(X_train.iloc[tr], y_train_log.iloc[tr])
+            maes.append(mean_absolute_error(y_train_log.iloc[va], m.predict(X_train.iloc[va])))
+        return float(np.mean(maes))
+
+    study = optuna.create_study(direction="minimize")
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+    return study.best_params
+
+
+def train_final(X_train, X_test, y_train_log, y_test_raw, best_params: dict):
+    model  = XGBRegressor(**best_params, random_state=42, n_jobs=-1, verbosity=0)
+    model.fit(X_train, y_train_log)
+    y_pred = np.expm1(model.predict(X_test))
+    mae    = mean_absolute_error(y_test_raw, y_pred)
+    rmse   = float(np.sqrt(mean_squared_error(y_test_raw, y_pred)))
+    mape   = float(np.mean(np.abs((y_test_raw - y_pred) / y_test_raw)) * 100)
+    pct15  = float(np.mean(np.abs(y_pred - y_test_raw) <= y_test_raw * 0.15) * 100)
+    r2     = r2_score(y_test_raw, y_pred)
+    metrics = {
+        "r2":             round(float(r2), 4),
+        "mae":            round(float(mae), 0),
+        "rmse":           round(rmse, 0),
+        "mape":           round(mape, 1),
+        "pct_dentro_15":  round(pct15, 1),
+        "mae_pct":        round(float(mae / float(y_test_raw.mean()) * 100), 1),
+        "n_train":        int(len(X_train)),
+        "n_test":         int(len(X_test)),
+        "total_data":     int(len(X_train) + len(X_test)),
+    }
+    return model, metrics
+
+
+# ─── Construcción de los bloques de resultados ────────────────────────────────
+
+def build_kpis(df: pd.DataFrame) -> dict:
+    p    = df["price_usd"].quantile([0.1, 0.25, 0.5, 0.75, 0.9])
+    pm2  = df["precio_por_m2"]
+    return {
+        "precio_mediano":    int(p[0.5]),
+        "precio_m2_mediano": round(float(pm2.median()), 0),
+        "n_propiedades":     int(len(df)),
+        "p10": int(p[0.1]),
+        "p25": int(p[0.25]),
+        "p75": int(p[0.75]),
+        "p90": int(p[0.9]),
+    }
+
+
+def build_distribucion(df: pd.DataFrame) -> dict:
+    edges         = np.arange(50_000, 1_225_000, 25_000)
+    counts, edges = np.histogram(df["price_usd"], bins=edges)
+    return {
+        "bins_edge": [int(e) for e in edges],
+        "counts":    [int(c) for c in counts],
+    }
+
+
+def build_barrios(df: pd.DataFrame) -> list:
+    stats = (
+        df.groupby("barrio")["price_usd"]
+        .agg(
+            precio_mediano="median",
+            p25=lambda x: x.quantile(0.25),
+            p75=lambda x: x.quantile(0.75),
+            n="count",
+        )
+        .reset_index()
+        .query("n >= 10")
+    )
+    m2 = (
+        df.groupby("barrio")["precio_por_m2"]
+        .median()
+        .rename("precio_m2_mediano")
+        .reset_index()
+    )
+    stats = stats.merge(m2, on="barrio").sort_values("precio_mediano", ascending=False)
+    stats["precio_mediano"]    = stats["precio_mediano"].round(0).astype(int)
+    stats["p25"]               = stats["p25"].round(0).astype(int)
+    stats["p75"]               = stats["p75"].round(0).astype(int)
+    stats["precio_m2_mediano"] = stats["precio_m2_mediano"].round(0).astype(int)
+    return stats.to_dict(orient="records")
+
+
+def build_impacto_features(
+    model, X: pd.DataFrame, df: pd.DataFrame, feature_cols: list
+) -> list:
+    results = []
+
+    # ── 1. Tipo de propiedad ──────────────────────────────────────────────────
+    for col, label, zero_col in [
+        ("es_ph",   "PH vs Departamento",  "es_casa"),
+        ("es_casa", "Casa vs Departamento", "es_ph"),
+    ]:
+        if col not in feature_cols:
+            continue
+        X_con = X.copy(); X_sin = X.copy()
+        X_con[col] = 1;   X_sin[col] = 0
+        if zero_col in feature_cols:
+            X_con[zero_col] = 0; X_sin[zero_col] = 0
+        delta = float(np.mean(np.expm1(model.predict(X_con)) - np.expm1(model.predict(X_sin))))
+        n_con = int(df[col].sum())
+        results.append({
+            "key":        col,
+            "label":      label,
+            "delta_usd":  round(delta, 0),
+            "precio_con": round(float(np.expm1(model.predict(X_con)).mean()), 0),
+            "precio_sin": round(float(np.expm1(model.predict(X_sin)).mean()), 0),
+            "n_con":      n_con,
+            "pct_con":    round(n_con / len(df) * 100, 1),
+        })
+
+    # ── 2. Ambientes (m² constante) ───────────────────────────────────────────
+    for amb_to, amb_from, label in [
+        (2, 1, "2 ambientes vs monoambiente"),
+        (3, 2, "3 ambientes vs 2 ambientes"),
+        (4, 3, "4 ambientes vs 3 ambientes"),
+    ]:
+        X_to = X.copy(); X_from = X.copy()
+        for Xm, amb in [(X_to, amb_to), (X_from, amb_from)]:
+            Xm["ambientes"]       = amb
+            Xm["dormitorios"]     = max(0, amb - 1)
+            Xm["m2_por_ambiente"] = (X["m2_total"] / amb).round(2)
+            Xm["es_monoambiente"] = int(amb == 1)
+        delta = float(np.mean(np.expm1(model.predict(X_to)) - np.expm1(model.predict(X_from))))
+        n_con = int((df["ambientes"] == amb_to).sum())
+        results.append({
+            "key":        f"amb_{amb_to}_vs_{amb_from}",
+            "label":      label,
+            "delta_usd":  round(delta, 0),
+            "precio_con": round(float(np.expm1(model.predict(X_to)).mean()), 0),
+            "precio_sin": round(float(np.expm1(model.predict(X_from)).mean()), 0),
+            "n_con":      n_con,
+            "pct_con":    round(n_con / len(df) * 100, 1),
+        })
+
+    # ── 3. Baño adicional ─────────────────────────────────────────────────────
+    X_2b = X.copy(); X_1b = X.copy()
+    X_2b["banos"] = 2; X_1b["banos"] = 1
+    delta = float(np.mean(np.expm1(model.predict(X_2b)) - np.expm1(model.predict(X_1b))))
+    n_2b  = int((df["banos"] >= 2).sum())
+    results.append({
+        "key":        "banos_2vs1",
+        "label":      "2 banos vs 1 bano",
+        "delta_usd":  round(delta, 0),
+        "precio_con": round(float(np.expm1(model.predict(X_2b)).mean()), 0),
+        "precio_sin": round(float(np.expm1(model.predict(X_1b)).mean()), 0),
+        "n_con":      n_2b,
+        "pct_con":    round(n_2b / len(df) * 100, 1),
+    })
+
+    results.sort(key=lambda x: abs(x["delta_usd"]), reverse=True)
+    return results
+
+
+def build_feature_importances(model, feature_cols: list) -> list:
+    pairs = sorted(zip(feature_cols, model.feature_importances_), key=lambda x: -x[1])
+    return [
+        {
+            "feature":    feat,
+            "label":      FEATURE_LABELS.get(feat, feat),
+            "importance": round(float(imp), 4),
+        }
+        for feat, imp in pairs
+    ]
+
+
+def build_predictor(
+    model,
+    df: pd.DataFrame,
+    feature_cols: list,
+    le_barrio: LabelEncoder,
+    le_prop: LabelEncoder,
+    barrio_med: pd.Series,
+) -> dict:
+    barrios_lista = sorted(df["barrio"].unique().tolist())
+    ratio_med     = float(df["ratio_cubierto"].median())
+    global_med    = float(barrio_med.median())
+
+    precios = {}
+    for barrio in barrios_lista:
+        barrio_enc   = int(le_barrio.transform([barrio])[0])
+        barrio_price = float(barrio_med.get(barrio, global_med))
+        precios[barrio] = {}
+
+        for prop_type in PROPERTY_TYPES:
+            if prop_type not in le_prop.classes_:
+                continue
+            prop_enc  = int(le_prop.transform([prop_type])[0])
+            es_ph     = int(prop_type == "Ph")
+            es_casa   = int(prop_type == "Casa")
+            precios[barrio][prop_type] = {}
+
+            for amb in AMBIENTES_GRID:
+                filas = []
+                for m2 in M2_GRID:
+                    fila = {col: 0 for col in feature_cols}
+                    fila.update({
+                        "barrio_enc":        barrio_enc,
+                        "precio_med_barrio": barrio_price,
+                        "m2_total":          m2,
+                        "m2_cubierto":       round(m2 * ratio_med, 1),
+                        "ratio_cubierto":    ratio_med,
+                        "ambientes":         amb,
+                        "dormitorios":       max(0, amb - 1),
+                        "banos":             1 if amb <= 2 else 2,
+                        "property_enc":      prop_enc,
+                        "m2_por_ambiente":   round(m2 / amb, 2),
+                        "es_monoambiente":   int(amb == 1),
+                        "es_ph":             es_ph,
+                        "es_casa":           es_casa,
+                    })
+                    filas.append(fila)
+
+                preds = np.expm1(model.predict(pd.DataFrame(filas)[feature_cols]))
+                precios[barrio][prop_type][str(amb)] = [
+                    max(0, round(float(p), 0)) for p in preds
+                ]
+
+    return {
+        "barrios":        barrios_lista,
+        "m2_grid":        M2_GRID,
+        "ambientes_grid": AMBIENTES_GRID,
+        "property_types": PROPERTY_TYPES,
+        "precios":        precios,
+    }
+
+
+# ─── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fast",   action="store_true", help="20 trials (desarrollo)")
+    parser.add_argument("--trials", type=int,            help="numero de trials Optuna")
+    args = parser.parse_args()
+
+    n_trials = 20 if args.fast else (args.trials or 50)
+
+    if not DATA_PATH.exists():
+        print(f"No se encontro {DATA_PATH}")
+        print("Ejecuta primero: python scripts/clean_data_venta.py")
+        return
+
+    print("Cargando y preparando features...")
+    df, le_barrio, le_prop = load_and_engineer(DATA_PATH)
+
+    # Split indices antes de calcular precio_med_barrio (evita leakage)
+    train_idx, test_idx = train_test_split(df.index, test_size=0.2, random_state=42)
+    y_raw = df["price_usd"]
+    barrio_med = y_raw.loc[train_idx].groupby(df.loc[train_idx, "barrio"]).median()
+    df["precio_med_barrio"] = df["barrio"].map(barrio_med).fillna(float(y_raw.loc[train_idx].median()))
+
+    y_log = np.log1p(y_raw)
+
+    print(f"  Registros:           {len(df):,}")
+    print(f"  Barrios:             {df['barrio'].nunique()}")
+    print(f"  Precio USD mediana:  ${y_raw.median():,.0f}")
+    print(f"  Precio/m2 mediana:   ${df['precio_por_m2'].median():,.0f}/m2")
+
+    feature_cols = get_feature_cols(df)
+    X = df[feature_cols]
+    X_train     = X.loc[train_idx]
+    X_test      = X.loc[test_idx]
+    y_train_log = y_log.loc[train_idx]
+    y_test_raw  = y_raw.loc[test_idx]
+
+    print(f"\nOptimizando hiperparametros ({n_trials} trials de Optuna)...")
+    best_params = tune(X_train, y_train_log, n_trials)
+    print(f"  Mejor MAE CV: {best_params}")
+
+    print("\nEntrenando modelo final con mejores parametros...")
+    model, metrics = train_final(X_train, X_test, y_train_log, y_test_raw, best_params)
+    print(f"  R2:    {metrics['r2']}  ({metrics['r2']*100:.1f}% de la variacion explicada)")
+    print(f"  MAE:   USD {metrics['mae']:,.0f}  ({metrics['mae_pct']}% del precio promedio)")
+    print(f"  RMSE:  USD {metrics['rmse']:,.0f}")
+    print(f"  MAPE:  {metrics['mape']}%")
+    print(f"  +-15%: {metrics['pct_dentro_15']}% de las predicciones dentro del rango")
+
+    print("\nCalculando estadisticas del mercado...")
+    results = {
+        "meta": {
+            "tipo":        "venta",
+            "moneda":      "USD",
+            "fecha_datos": "2020",
+            "fuente":      "Properati / ZonaProp",
+            "algoritmo":   "XGBoost",
+        },
+        "modelo":              metrics,
+        "hiperparametros":     best_params,
+        "kpis":                build_kpis(df),
+        "distribucion":        build_distribucion(df),
+        "barrios":             build_barrios(df),
+        "impacto_features":    build_impacto_features(model, X, df, feature_cols),
+        "feature_importances": build_feature_importances(model, feature_cols),
+        "predictor":           build_predictor(model, df, feature_cols, le_barrio, le_prop, barrio_med),
+    }
+
+    with open(OUT_JSON, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    print(f"\nExportado: {OUT_JSON}")
+
+    with open(OUT_JS, "w", encoding="utf-8") as f:
+        f.write("const VENTA_DATA = ")
+        json.dump(results, f, ensure_ascii=False, indent=2)
+        f.write(";")
+    print(f"Exportado: {OUT_JS}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Data Cleaning — Alquileres &amp; Compraventa CABA</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; color: #1a1a1a; padding: 48px 64px; max-width: 1100px; margin: auto; }
+
+  /* ─── PORTADA ─────────────────────────────────────────────────────────── */
+  .portada { margin-bottom: 48px; border-bottom: 3px solid #1a1a1a; padding-bottom: 28px; }
+  .portada .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 3px; color: #888; margin-bottom: 8px; }
+  .portada h1 { font-size: 38px; font-weight: 900; letter-spacing: -1px; }
+  .portada .subtitle { font-size: 14px; color: #666; margin-top: 8px; }
+
+  /* ─── OVERVIEW CARDS ──────────────────────────────────────────────────── */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 48px; }
+  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 24px 28px; }
+  .card .card-label { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #888; margin-bottom: 10px; }
+  .card h2 { font-size: 20px; font-weight: 800; margin-bottom: 12px; }
+  .card .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; margin-right: 6px; margin-bottom: 6px; }
+  .pill-green  { background: #d4f0e2; color: #1a7a46; }
+  .pill-blue   { background: #ddeeff; color: #1a4fa0; }
+  .pill-orange { background: #ffecd5; color: #a04a00; }
+  .card .flow { font-size: 13px; color: #555; margin-top: 12px; border-top: 1px solid #f0f0f0; padding-top: 12px; }
+  .card .flow .num { font-weight: 700; color: #1a1a1a; }
+  .card .flow .arrow { color: #2a9d5c; font-weight: 700; margin: 0 6px; }
+  .card .metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; border-top: 1px solid #f0f0f0; padding-top: 12px; }
+  .card .metric-val { font-size: 20px; font-weight: 800; color: #1a1a1a; }
+  .card .metric-label { font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
+  /* ─── SECCIÓN ─────────────────────────────────────────────────────────── */
+  .dataset-block { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 36px 40px; margin-bottom: 32px; }
+  .dataset-block .block-header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 28px; padding-bottom: 16px; border-bottom: 2px solid #1a1a1a; }
+  .dataset-block .block-num { font-size: 11px; text-transform: uppercase; letter-spacing: 3px; color: #888; }
+  .dataset-block .block-title { font-size: 22px; font-weight: 800; }
+  .dataset-block .block-badge { font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
+  .badge-alquiler { background: #e3f0fb; color: #1a5ca0; }
+  .badge-venta    { background: #fdecea; color: #a01a1a; }
+
+  .seccion { margin-bottom: 36px; }
+  .seccion-titulo { font-size: 10px; text-transform: uppercase; letter-spacing: 3px; color: #aaa; margin-bottom: 6px; }
+  .seccion h3 { font-size: 15px; font-weight: 700; margin-bottom: 14px; color: #333; }
+
+  /* ─── LEYENDA ──────────────────────────────────────────────────────────── */
+  .leyenda { display: flex; gap: 16px; margin-bottom: 12px; font-size: 11px; font-weight: 600; align-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
+  .dot-r { background: #d7263d; } .dot-g { background: #2a9d5c; } .dot-n { background: #e8831a; } .dot-b { background: #1a6fc4; }
+
+  /* ─── TABLAS ───────────────────────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  thead th { background: #1a1a1a; color: #fff; text-align: left; padding: 9px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+  tbody tr td { padding: 7px 12px; border-bottom: 1px solid rgba(0,0,0,0.05); vertical-align: middle; }
+  .r  { background: #fff0f2; }
+  .g  { background: #edfaf3; }
+  .n  { background: #fff8f0; }
+  .b  { background: #edf4fc; }
+  .grp { background: #f0f0f0 !important; }
+  .grp td { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #888; padding: 5px 12px; font-weight: 600; }
+
+  .col-name { font-family: 'Consolas', monospace; font-weight: 700; font-size: 12px; white-space: nowrap; }
+  .dec-r  { color: #d7263d; font-weight: 700; font-size: 12px; }
+  .dec-g  { color: #2a9d5c; font-weight: 700; font-size: 12px; }
+  .dec-n  { color: #e8831a; font-weight: 700; font-size: 12px; }
+  .razon  { color: #555; font-size: 12px; line-height: 1.4; }
+  .feat-name { font-family: 'Consolas', monospace; font-weight: 700; font-size: 12px; color: #1a6fc4; }
+  .formula   { font-family: 'Consolas', monospace; font-size: 11px; color: #555; }
+  .note      { font-size: 11px; color: #999; margin-top: 8px; font-style: italic; }
+
+  /* ─── CALLOUT ──────────────────────────────────────────────────────────── */
+  .callout { padding: 14px 18px; border-radius: 4px; font-size: 12.5px; margin-bottom: 16px; border-left: 4px solid; }
+  .callout-red    { background: #fff0f2; border-color: #d7263d; color: #6a0018; }
+  .callout-orange { background: #fff8f0; border-color: #e8831a; color: #6a3000; }
+  .callout-green  { background: #edfaf3; border-color: #2a9d5c; color: #0d4a28; }
+  .callout strong { font-weight: 700; }
+
+  /* ─── FOOTER ───────────────────────────────────────────────────────────── */
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 11px; color: #bbb; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!--  PORTADA                                                               -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="portada">
+  <div class="eyebrow">Dashboard Inmobiliario CABA · Data Pipeline</div>
+  <h1>DATA CLEANING</h1>
+  <div class="subtitle">Decisiones de limpieza y feature engineering — Alquileres 2026 &amp; Compraventa 2020</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!--  OVERVIEW CARDS                                                        -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="cards">
+
+  <!-- Alquileres -->
+  <div class="card">
+    <div class="card-label">Modelo A</div>
+    <h2>Alquileres CABA</h2>
+    <span class="pill pill-blue">ZonaProp</span>
+    <span class="pill pill-blue">Marzo 2026</span>
+    <span class="pill pill-green">XGBoost</span>
+    <div class="flow">
+      <span class="num">24.527</span> filas · 75 col
+      <span class="arrow">→</span>
+      <span class="num">20.829</span> post-cleaning
+      <span class="arrow">→</span>
+      <span class="num">19.740</span> para el modelo
+    </div>
+    <div class="metrics">
+      <div><div class="metric-val">0.906</div><div class="metric-label">R²</div></div>
+      <div><div class="metric-val">$91</div><div class="metric-label">MAE / mes</div></div>
+      <div><div class="metric-val">10%</div><div class="metric-label">MAE %</div></div>
+    </div>
+  </div>
+
+  <!-- Compraventa -->
+  <div class="card">
+    <div class="card-label">Modelo B</div>
+    <h2>Compraventa CABA</h2>
+    <span class="pill pill-orange">Properati</span>
+    <span class="pill pill-orange">2020</span>
+    <span class="pill pill-green">XGBoost</span>
+    <div class="flow">
+      <span class="num">146.660</span> filas · 19 col
+      <span class="arrow">→</span>
+      <span class="num">44.869</span> post-cleaning
+      <span class="arrow">→</span>
+      <span class="num">44.869</span> para el modelo
+    </div>
+    <div class="metrics">
+      <div><div class="metric-val">0.866</div><div class="metric-label">R²</div></div>
+      <div><div class="metric-val">$43K</div><div class="metric-label">MAE venta</div></div>
+      <div><div class="metric-val">17.6%</div><div class="metric-label">MAE %</div></div>
+    </div>
+  </div>
+
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!--  BLOQUE A — ALQUILERES                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="dataset-block">
+  <div class="block-header">
+    <span class="block-num">01</span>
+    <span class="block-title">Alquileres CABA 2026</span>
+    <span class="block-badge badge-alquiler">clean_data.py · alquileres_20260302_100514.csv</span>
+  </div>
+
+  <!-- COLUMNAS -->
+  <div class="seccion">
+    <div class="seccion-titulo">A · Decisiones por columna</div>
+    <h3>¿Qué columnas conservar?</h3>
+    <div class="leyenda">
+      <span><span class="dot dot-r"></span>Eliminar</span>
+      <span><span class="dot dot-n"></span>Zona gris</span>
+      <span><span class="dot dot-g"></span>Conservar</span>
+    </div>
+    <table>
+      <thead>
+        <tr><th style="width:22%">Columna</th><th style="width:12%">Decisión</th><th style="width:14%">Nulos</th><th>Razón</th></tr>
+      </thead>
+      <tbody>
+        <tr class="grp"><td colspan="4">Identificación &amp; metadata</td></tr>
+        <tr class="r"><td class="col-name">listing_id</td><td class="dec-r">Eliminar</td><td class="razon">—</td><td class="razon">metadata de scraping</td></tr>
+        <tr class="r"><td class="col-name">source / city / operation_type / exchange_rate</td><td class="dec-r">Eliminar</td><td class="razon">0%</td><td class="razon">valor único en todo el dataset</td></tr>
+        <tr class="r"><td class="col-name">detail_url / scraped_at / raw_data / title</td><td class="dec-r">Eliminar</td><td class="razon">—</td><td class="razon">metadata · no informativo para el modelo</td></tr>
+        <tr class="r"><td class="col-name">video_url / tour_360_url / codigo_aviso / fecha_publicacion / images</td><td class="dec-r">Eliminar</td><td class="razon">100%</td><td class="razon">100% nulos</td></tr>
+
+        <tr class="grp"><td colspan="4">Ubicación</td></tr>
+        <tr class="r"><td class="col-name">address</td><td class="dec-r">Eliminar</td><td class="razon">~0%</td><td class="razon">texto libre · usada solo para rescatar barrio (extraído a <code>barrio</code>)</td></tr>
+        <tr class="g"><td class="col-name">neighborhood → <strong>barrio</strong></td><td class="dec-g">Conservar</td><td class="razon">27%</td><td class="razon">feature crítica · 80% de los nulos recuperados desde <code>address</code></td></tr>
+        <tr class="r"><td class="col-name">latitude / longitude</td><td class="dec-r">Eliminar</td><td class="razon">100%</td><td class="razon">100% nulos</td></tr>
+
+        <tr class="grp"><td colspan="4">Precio</td></tr>
+        <tr class="g"><td class="col-name">price_usd → <strong>price_ref_usd</strong></td><td class="dec-g">Conservar</td><td class="razon">0%</td><td class="razon">target del modelo · unificado: ARS/1280 para avisos en ARS</td></tr>
+        <tr class="r"><td class="col-name">price_ars / currency / price_raw</td><td class="dec-r">Eliminar</td><td class="razon">—</td><td class="razon">redundante post-consolidación en <code>price_ref_usd</code></td></tr>
+        <tr class="r"><td class="col-name">usd_equivalent</td><td class="dec-r">Eliminar</td><td class="razon">100%</td><td class="razon">100% nulos</td></tr>
+        <tr class="r"><td class="col-name">expenses_ars / expenses_raw</td><td class="dec-r">Eliminar</td><td class="razon">100%</td><td class="razon">100% nulos</td></tr>
+
+        <tr class="grp"><td colspan="4">Características físicas</td></tr>
+        <tr class="r"><td class="col-name">property_type</td><td class="dec-r">Eliminar</td><td class="razon">100%</td><td class="razon">100% nulos</td></tr>
+        <tr class="g"><td class="col-name">ambientes</td><td class="dec-g">Conservar</td><td class="razon">2.6%</td><td class="razon">eliminar filas con nulo</td></tr>
+        <tr class="n"><td class="col-name">dormitorios</td><td class="dec-n">Zona gris</td><td class="razon">28%</td><td class="razon">imputar: dormitorios = ambientes − 1 · válido en ~83% de los casos</td></tr>
+        <tr class="g"><td class="col-name">banos</td><td class="dec-g">Conservar</td><td class="razon">3.5%</td><td class="razon">eliminar filas con nulo</td></tr>
+        <tr class="r"><td class="col-name">toilettes</td><td class="dec-r">Eliminar</td><td class="razon">100%</td><td class="razon">100% nulos</td></tr>
+        <tr class="g"><td class="col-name">m2_total → <strong>superficie</strong></td><td class="dec-g">Conservar</td><td class="razon">~1%</td><td class="razon">eliminar filas con nulo · filtrar [15, 400] m²</td></tr>
+        <tr class="r"><td class="col-name">m2_covered / m2_uncovered / m2_semicovered</td><td class="dec-r">Eliminar</td><td class="razon">100%</td><td class="razon">100% nulos</td></tr>
+        <tr class="r"><td class="col-name">antiguedad / piso / pisos_edificio / orientacion / disposicion / luminosidad / estado / tipo_calefaccion</td><td class="dec-r">Eliminar</td><td class="razon">&gt;55%</td><td class="razon">demasiados nulos para ser útiles</td></tr>
+
+        <tr class="grp"><td colspan="4">Amenities del edificio</td></tr>
+        <tr class="g"><td class="col-name">pileta / gimnasio / sum / parrilla / seguridad_24hs / ascensor / solarium / laundry / cowork</td><td class="dec-g">Conservar</td><td class="razon">0%</td><td class="razon">booleanos completos · forman <code>amenity_score_edificio</code></td></tr>
+
+        <tr class="grp"><td colspan="4">Amenities del depto</td></tr>
+        <tr class="g"><td class="col-name">balcon / terraza / patio / jardin / baulera / aire_acondicionado / calefaccion / amoblado</td><td class="dec-g">Conservar</td><td class="razon">0%</td><td class="razon">booleanos completos · forman <code>amenity_score_depto</code></td></tr>
+        <tr class="r"><td class="col-name">cochera (bool)</td><td class="dec-r">Eliminar</td><td class="razon">0%</td><td class="razon">reemplazado por <code>cochera_cantidad</code> (entero 0–5)</td></tr>
+        <tr class="g"><td class="col-name">cochera_cantidad</td><td class="dec-g">Conservar</td><td class="razon">0%</td><td class="razon">más informativo que el booleano</td></tr>
+        <tr class="n"><td class="col-name">bicipuerto</td><td class="dec-n">Zona gris</td><td class="razon">0%</td><td class="razon">solo 1.3% True — muy poco varianza para el modelo</td></tr>
+
+        <tr class="grp"><td colspan="4">Condiciones de alquiler</td></tr>
+        <tr class="g"><td class="col-name">acepta_mascotas / amoblado / apto_profesional / apto_credito</td><td class="dec-g">Conservar</td><td class="razon">0%</td><td class="razon">pueden impactar en precio y demanda</td></tr>
+
+        <tr class="grp"><td colspan="4">Publicador</td></tr>
+        <tr class="r"><td class="col-name">publisher_type / publisher_name / publisher_phone</td><td class="dec-r">Eliminar</td><td class="razon">~100%</td><td class="razon">publisher_type es 99.9% "inmobiliaria" — cero varianza efectiva</td></tr>
+
+        <tr class="grp"><td colspan="4">Temporarios (excluir del análisis)</td></tr>
+        <tr class="r"><td class="col-name">es_temporario</td><td class="dec-r">Filtrar filas</td><td class="razon">—</td><td class="razon">~2.724 avisos (11%) de alquiler temporario — precios no comparables</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- FILAS -->
+  <div class="seccion">
+    <div class="seccion-titulo">B · Tratamiento de filas</div>
+    <h3>Filtros aplicados</h3>
+    <table>
+      <thead>
+        <tr><th style="width:28%">Condición</th><th style="width:18%">Filas afectadas</th><th style="width:12%">Acción</th><th>Justificación</th></tr>
+      </thead>
+      <tbody>
+        <tr class="r"><td class="col-name">es_temporario = True</td><td class="razon">~2.724</td><td class="dec-r">Eliminar</td><td class="razon">alquiler por día/semana — precio no comparable con alquiler tradicional</td></tr>
+        <tr class="r"><td class="col-name">price_ref_usd nulo</td><td class="razon">134</td><td class="dec-r">Eliminar</td><td class="razon">el target no se imputa</td></tr>
+        <tr class="r"><td class="col-name">price_ars &lt; 50.000 (avisos ARS)</td><td class="razon">77</td><td class="dec-r">Eliminar</td><td class="razon">scraper perdió los miles: "$780" en vez de "$780.000" → price_usd &lt; $1</td></tr>
+        <tr class="r"><td class="col-name">price_usd fuera del P1–P99</td><td class="razon">~493</td><td class="dec-r">Eliminar</td><td class="razon">outliers que distorsionan el modelo · cubre también avisos USD &gt; $50.000</td></tr>
+        <tr class="r"><td class="col-name">superficie nula</td><td class="razon">~302</td><td class="dec-r">Eliminar</td><td class="razon">feature importante · no se puede imputar de forma confiable</td></tr>
+        <tr class="r"><td class="col-name">superficie &lt; 15 m²</td><td class="razon">variable</td><td class="dec-r">Eliminar</td><td class="razon">probablemente garaje, baulera o error de carga</td></tr>
+        <tr class="r"><td class="col-name">superficie &gt; 400 m²</td><td class="razon">variable</td><td class="dec-r">Eliminar</td><td class="razon">fuera del segmento residencial estándar</td></tr>
+        <tr class="r"><td class="col-name">price_m2_usd fuera de [2, 150]</td><td class="razon">variable</td><td class="dec-r">Eliminar</td><td class="razon">rango razonable para alquiler mensual en CABA · filtra combinaciones imposibles</td></tr>
+        <tr class="r"><td class="col-name">ambientes nulo</td><td class="razon">~665</td><td class="dec-r">Eliminar</td><td class="razon">feature importante</td></tr>
+        <tr class="r"><td class="col-name">barrio nulo (post-recuperación)</td><td class="razon">~551 (2.6%)</td><td class="dec-r">Eliminar en model.py</td><td class="razon">el 80% de los nulos originales se recuperó desde <code>address</code></td></tr>
+        <tr class="n"><td class="col-name">dormitorios nulo</td><td class="razon">5.865 (28%)</td><td class="dec-n">Imputar</td><td class="razon">dormitorios = ambientes − 1 · válido en ~83% · casi todos son monoambientes</td></tr>
+      </tbody>
+    </table>
+    <div class="note">* Los filtros de precio (P1–P99) y precio/m² se aplican después de los filtros de nulos.</div>
+  </div>
+
+  <!-- FEATURE ENGINEERING -->
+  <div class="seccion">
+    <div class="seccion-titulo">C · Feature engineering</div>
+    <h3>Features derivadas (generadas en model.py)</h3>
+    <table>
+      <thead>
+        <tr><th style="width:26%">Feature</th><th style="width:40%">Fórmula</th><th>Para qué sirve</th></tr>
+      </thead>
+      <tbody>
+        <tr class="b"><td class="feat-name">m2_por_ambiente</td><td class="formula">superficie / ambientes</td><td class="razon">amplitud media de cada ambiente — deptos grandes de 2 amb ≠ chicos de 2 amb</td></tr>
+        <tr class="b"><td class="feat-name">amenity_score_edificio</td><td class="formula">sum(pileta, gimnasio, sum, parrilla, seguridad_24hs, ascensor, solarium, laundry, cowork)</td><td class="razon">score 0–9 de servicios del edificio</td></tr>
+        <tr class="b"><td class="feat-name">amenity_score_depto</td><td class="formula">sum(balcon, terraza, patio, jardin, baulera, aire_ac, calefaccion, amoblado)</td><td class="razon">score 0–8 de amenities propios del depto</td></tr>
+        <tr class="b"><td class="feat-name">es_monoambiente</td><td class="formula">ambientes == 1</td><td class="razon">segmento de precio propio — no lineal con ambientes</td></tr>
+        <tr class="b"><td class="feat-name">tiene_espacio_exterior</td><td class="formula">balcon OR terraza OR patio OR jardin</td><td class="razon">muy valorado post-pandemia</td></tr>
+        <tr class="b"><td class="feat-name">es_edificio_premium</td><td class="formula">pileta AND (gimnasio OR sum) AND seguridad_24hs</td><td class="razon">proxy de edificio con servicios completos</td></tr>
+        <tr class="b"><td class="feat-name">barrio_enc</td><td class="formula">LabelEncoder(barrio)</td><td class="razon">46 barrios → entero · XGBoost hace splits binarios sobre el valor</td></tr>
+      </tbody>
+    </table>
+    <div class="callout callout-orange" style="margin-top:14px;">
+      <strong>Nota sobre barrio_enc:</strong> label encoding asigna enteros sin orden semántico (barrio_3 no es "mejor" que barrio_2). Funciona porque XGBoost hace splits binarios (¿es este barrio o no?) y no asume linealidad. Alternativa: one-hot encoding, pero añade 46 columnas y no mejoró el R² en pruebas previas.
+    </div>
+  </div>
+
+</div><!-- /dataset-block alquileres -->
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!--  BLOQUE B — COMPRAVENTA                                                -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="dataset-block">
+  <div class="block-header">
+    <span class="block-num">02</span>
+    <span class="block-title">Compraventa CABA 2020</span>
+    <span class="block-badge badge-venta">clean_data_venta.py · bsas_realstate_on_sale_properati_dataset_2020.csv</span>
+  </div>
+
+  <div class="callout callout-orange">
+    <strong>Diferencia clave respecto a alquileres:</strong> este dataset de Properati no tiene amenities (sin pileta, gimnasio, balcón, etc.). Las features predictoras son superficie, ambientes, baños, tipo de propiedad y barrio. El dataset es de 2020 — los precios corresponden a ese contexto económico.
+  </div>
+
+  <!-- COLUMNAS -->
+  <div class="seccion">
+    <div class="seccion-titulo">A · Decisiones por columna</div>
+    <h3>¿Qué columnas conservar? (19 columnas originales)</h3>
+    <div class="leyenda">
+      <span><span class="dot dot-r"></span>Eliminar</span>
+      <span><span class="dot dot-n"></span>Zona gris</span>
+      <span><span class="dot dot-g"></span>Conservar</span>
+    </div>
+    <table>
+      <thead>
+        <tr><th style="width:26%">Columna original → renombre</th><th style="width:12%">Decisión</th><th style="width:14%">Nulos</th><th>Razón</th></tr>
+      </thead>
+      <tbody>
+        <tr class="grp"><td colspan="4">Temporal</td></tr>
+        <tr class="n"><td class="col-name">end_date</td><td class="dec-n">Temporal</td><td class="razon">0%</td><td class="razon">usada para deduplicación (mantener aviso más reciente) · eliminada post-dedup</td></tr>
+        <tr class="r"><td class="col-name">start_date / created_on</td><td class="dec-r">Eliminar</td><td class="razon">0%</td><td class="razon">metadata · no aporta al precio</td></tr>
+
+        <tr class="grp"><td colspan="4">Geográfico</td></tr>
+        <tr class="r"><td class="col-name">l1</td><td class="dec-r">Eliminar</td><td class="razon">0%</td><td class="razon">valor único: Argentina</td></tr>
+        <tr class="r"><td class="col-name">l2</td><td class="dec-r">Filtrar + eliminar</td><td class="razon">0%</td><td class="razon">usada para filtrar Capital Federal · eliminada después</td></tr>
+        <tr class="g"><td class="col-name">l3 → <strong>barrio</strong></td><td class="dec-g">Conservar</td><td class="razon">0%</td><td class="razon">feature crítica · 57 barrios de CABA</td></tr>
+        <tr class="r"><td class="col-name">lat / lon</td><td class="dec-r">Eliminar</td><td class="razon">6.8%</td><td class="razon">coordenadas no usadas · barrio ya captura la ubicación</td></tr>
+
+        <tr class="grp"><td colspan="4">Precio</td></tr>
+        <tr class="g"><td class="col-name">price → <strong>price_usd</strong></td><td class="dec-g">Conservar</td><td class="razon">0%</td><td class="razon">target del modelo · ya en USD (todo el dataset)</td></tr>
+        <tr class="r"><td class="col-name">currency</td><td class="dec-r">Eliminar</td><td class="razon">0%</td><td class="razon">valor único: USD</td></tr>
+
+        <tr class="grp"><td colspan="4">Características físicas</td></tr>
+        <tr class="g"><td class="col-name">rooms → <strong>ambientes</strong></td><td class="dec-g">Conservar</td><td class="razon">0%</td><td class="razon">total de ambientes (living + dormitorios + cocina)</td></tr>
+        <tr class="n"><td class="col-name">bedrooms → <strong>dormitorios</strong></td><td class="dec-n">Zona gris</td><td class="razon">0% *</td><td class="razon">* bedrooms=0 en monoambientes es válido — no confundir con nulo. Imputar solo donde es genuinamente nulo</td></tr>
+        <tr class="n"><td class="col-name">bathrooms → <strong>banos</strong></td><td class="dec-n">Zona gris</td><td class="razon">2.7%</td><td class="razon">imputar con 1 (valor modal en todos los tramos)</td></tr>
+        <tr class="g"><td class="col-name">surface_total → <strong>m2_total</strong></td><td class="dec-g">Conservar</td><td class="razon">10.1%</td><td class="razon">eliminar filas con nulo · no imputable</td></tr>
+        <tr class="g"><td class="col-name">surface_covered → <strong>m2_cubierto</strong></td><td class="dec-g">Conservar</td><td class="razon">10.7%</td><td class="razon">feature exclusiva de este dataset · imputar con mediana barrio×tipo</td></tr>
+        <tr class="g"><td class="col-name">property_type</td><td class="dec-g">Conservar</td><td class="razon">0%</td><td class="razon">Departamento / PH / Casa — diferencias de precio significativas</td></tr>
+        <tr class="r"><td class="col-name">operation_type</td><td class="dec-r">Eliminar</td><td class="razon">0%</td><td class="razon">valor único: Venta</td></tr>
+
+        <tr class="grp"><td colspan="4">Texto libre</td></tr>
+        <tr class="r"><td class="col-name">title / description</td><td class="dec-r">Eliminar</td><td class="razon">0%</td><td class="razon">texto libre · NLP fuera del scope actual</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- FILAS -->
+  <div class="seccion">
+    <div class="seccion-titulo">B · Tratamiento de filas</div>
+    <h3>Filtros y deduplicación</h3>
+
+    <div class="callout callout-red" style="margin-bottom:16px;">
+      <strong>Problema crítico — Duplicados (46%):</strong> Properati republica el mismo aviso con nueva fecha cuando expira. Resultado: 42.654 registros (46%) son el mismo aviso con distinto <code>end_date</code>. Acción: deduplicar por <code>(price_usd, m2_total, barrio, property_type, ambientes)</code> conservando el <code>end_date</code> más reciente.
+    </div>
+
+    <table>
+      <thead>
+        <tr><th style="width:32%">Condición</th><th style="width:18%">Filas afectadas</th><th style="width:12%">Acción</th><th>Justificación</th></tr>
+      </thead>
+      <tbody>
+        <tr class="r"><td class="col-name">l2 ≠ 'Capital Federal'</td><td class="razon">54.121</td><td class="dec-r">Filtrar</td><td class="razon">solo CABA — GBA tiene mercado distinto</td></tr>
+        <tr class="r"><td class="col-name">property_type no residencial</td><td class="razon">1.054</td><td class="dec-r">Filtrar</td><td class="razon">oficinas, locales, depósitos, cocheras — precio no comparable</td></tr>
+        <tr class="r"><td class="col-name">Duplicados por precio+m²+barrio+tipo+amb</td><td class="razon">42.654</td><td class="dec-r">Deduplicar</td><td class="razon">conservar end_date más reciente</td></tr>
+        <tr class="r"><td class="col-name">m2_total nulo</td><td class="razon">~10%</td><td class="dec-r">Eliminar</td><td class="razon">feature importante · no imputable sin otro dato de superficie</td></tr>
+        <tr class="r"><td class="col-name">m2_total fuera de [15, 800]</td><td class="razon">variable</td><td class="dec-r">Eliminar</td><td class="razon">&lt;15 m²: garaje/baulera · &gt;800 m²: fuera del segmento residencial</td></tr>
+        <tr class="r"><td class="col-name">price_usd fuera del P1–P99</td><td class="razon">~900</td><td class="dec-r">Eliminar</td><td class="razon">$57K–$1.58M · outliers en ambos extremos</td></tr>
+        <tr class="r"><td class="col-name">precio_por_m2 fuera de [500, 8.000]</td><td class="razon">variable</td><td class="dec-r">Eliminar</td><td class="razon">rango razonable para CABA 2020 · elimina combinaciones imposibles</td></tr>
+        <tr class="n"><td class="col-name">bathrooms nulo</td><td class="razon">2.7%</td><td class="dec-n">Imputar</td><td class="razon">imputar con 1 — valor modal en todos los tramos de ambientes</td></tr>
+        <tr class="n"><td class="col-name">m2_cubierto nulo</td><td class="razon">10.7%</td><td class="dec-n">Imputar</td><td class="razon">imputar con mediana de barrio×tipo · luego mediana global para el 0.8% restante</td></tr>
+        <tr class="n"><td class="col-name">dormitorios nulo (casos reales)</td><td class="razon">variable</td><td class="dec-n">Imputar</td><td class="razon">dormitorios = ambientes − 1 · bedrooms=0 en monoambientes es válido, no nulo</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- FEATURE ENGINEERING -->
+  <div class="seccion">
+    <div class="seccion-titulo">C · Feature engineering</div>
+    <h3>Features derivadas (generadas en model_venta.py)</h3>
+    <table>
+      <thead>
+        <tr><th style="width:24%">Feature</th><th style="width:38%">Fórmula</th><th>Para qué sirve</th></tr>
+      </thead>
+      <tbody>
+        <tr class="b"><td class="feat-name">m2_por_ambiente</td><td class="formula">m2_total / ambientes</td><td class="razon">amplitud media por ambiente</td></tr>
+        <tr class="b"><td class="feat-name">ratio_cubierto</td><td class="formula">m2_cubierto / m2_total  <em>(clip 0–1)</em></td><td class="razon">proporción cubierta · proxy de calidad constructiva · no disponible en alquileres</td></tr>
+        <tr class="b"><td class="feat-name">es_monoambiente</td><td class="formula">ambientes == 1</td><td class="razon">monoambientes tienen lógica de precio propia</td></tr>
+        <tr class="b"><td class="feat-name">es_ph</td><td class="formula">property_type == 'Ph'</td><td class="razon">PH tiene precio distinto al departamento estándar</td></tr>
+        <tr class="b"><td class="feat-name">es_casa</td><td class="formula">property_type == 'Casa'</td><td class="razon">casas tienen dinámica diferente (más m², distinta valorización)</td></tr>
+        <tr class="b"><td class="feat-name">barrio_enc</td><td class="formula">LabelEncoder(barrio)</td><td class="razon">57 barrios → entero</td></tr>
+        <tr class="b"><td class="feat-name">property_enc</td><td class="formula">LabelEncoder(property_type)</td><td class="razon">Departamento / Ph / Casa → 0 / 1 / 2</td></tr>
+      </tbody>
+    </table>
+    <div class="callout callout-green" style="margin-top:14px;">
+      <strong>ratio_cubierto:</strong> mediana global = 0.92 (92% de superficie cubierta). Alta varianza en el extremo bajo (algunas propiedades con patio/jardín grande tienen ratio ≈ 0.60). XGBoost le asigna la mayor importancia del modelo (0.29), probablemente porque es un proxy de calidad constructiva no capturado por otras variables.
+    </div>
+  </div>
+
+</div><!-- /dataset-block compraventa -->
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!--  TABLA COMPARATIVA                                                     -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="dataset-block">
+  <div class="block-header">
+    <span class="block-num">03</span>
+    <span class="block-title">Comparación entre modelos</span>
+  </div>
+  <table>
+    <thead>
+      <tr><th style="width:30%">Aspecto</th><th>Alquileres 2026</th><th>Compraventa 2020</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="col-name">Fuente</td><td class="razon">ZonaProp (scraping propio)</td><td class="razon">Properati (dataset público)</td></tr>
+      <tr class="b"><td class="col-name">Registros post-cleaning</td><td class="razon">19.740</td><td class="razon">44.869</td></tr>
+      <tr><td class="col-name">Barrios</td><td class="razon">46</td><td class="razon">57</td></tr>
+      <tr class="b"><td class="col-name">Amenities</td><td class="razon">~20 booleanos (pileta, gimnasio, etc.)</td><td class="razon">Ninguno (dataset no los tiene)</td></tr>
+      <tr><td class="col-name">Superficie cubierta</td><td class="razon">No disponible (100% nulo)</td><td class="razon">Disponible → <code>ratio_cubierto</code> (feature top-1)</td></tr>
+      <tr class="b"><td class="col-name">Tipo de propiedad</td><td class="razon">No disponible (100% nulo)</td><td class="razon">Departamento / PH / Casa</td></tr>
+      <tr><td class="col-name">Target</td><td class="razon">price_ref_usd (USD/mes)</td><td class="razon">price_usd (USD total)</td></tr>
+      <tr class="b"><td class="col-name">Precio mediano</td><td class="razon">$625 USD/mes</td><td class="razon">$178.000 USD</td></tr>
+      <tr><td class="col-name">Precio/m² mediano</td><td class="razon">$13.9 USD/m²/mes</td><td class="razon">$2.545 USD/m²</td></tr>
+      <tr class="b"><td class="col-name">R²</td><td class="razon"><strong>0.906</strong></td><td class="razon"><strong>0.866</strong></td></tr>
+      <tr><td class="col-name">MAE</td><td class="razon">$91/mes (10% del precio promedio)</td><td class="razon">$43.479 (17.6% del precio promedio)</td></tr>
+      <tr class="b"><td class="col-name">Datos del predictor</td><td class="razon">46 barrios × 5 amb × 10 m² = 2.300 celdas + 20 deltas de amenities</td><td class="razon">57 barrios × 3 tipos × 5 amb × 10 m² = 8.550 celdas</td></tr>
+    </tbody>
+  </table>
+  <div class="callout callout-orange" style="margin-top:16px;">
+    <strong>¿Por qué el MAE% de ventas es mayor (17.6% vs 10%)?</strong> Los precios de venta tienen más dispersión por barrio (Puerto Madero a $650K median vs Villa Lugano a $65K). Sin amenities para discriminar dentro de un barrio, el modelo tiene menos información para refinar la predicción. Con el dataset de ZonaProp 2026 (con amenities) el MAE% debería bajar significativamente.
+  </div>
+</div>
+
+
+<footer>
+  Generado: 2026-05-05 &nbsp;·&nbsp;
+  Modelo A: alquileres_20260302_100514.csv (ZonaProp) &nbsp;·&nbsp;
+  Modelo B: bsas_realstate_on_sale_properati_dataset_2020.csv (Properati) &nbsp;·&nbsp;
+  v2.0
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mercado Inmobiliario CABA · 2026</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+
+    /* toggle */
+    [data-active="true"]  { background: #000; color: #fff; }
+    [data-active="false"] { background: transparent; color: #9ca3af; }
+
+    /* bar charts */
+    .bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .bar-label-block { width: 180px; flex-shrink: 0; }
+    .bar-label { width: 160px; flex-shrink: 0; display: block; font-size: 12px; text-align: right; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar-label-block .bar-label { width: 100%; }
+    .bar-sub   { display: block; font-size: 10px; text-align: right; color: #d1d5db; }
+    .bar-track { flex: 1; height: 4px; background: #f3f4f6; border-radius: 2px; }
+    .bar-fill  { height: 100%; background: #000; border-radius: 2px; transition: width 0.4s ease; }
+    .bar-fill.neg    { background: #d1d5db; }
+    .bar-fill.accent { background: #000; }
+    .bar-val   { width: 120px; font-size: 12px; color: #9ca3af; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+    /* select estilo minimal */
+    select {
+      appearance: none; background: transparent;
+      border-bottom: 1px solid #e5e7eb; padding: 6px 0;
+      font-size: 1.25rem; font-weight: 900; font-family: 'Inter', sans-serif;
+      color: #000; cursor: pointer; outline: none; width: 100%;
+    }
+    select:focus { border-color: #000; }
+  </style>
+</head>
+<body class="bg-white text-black antialiased">
+
+  <!-- ─── HEADER ─────────────────────────────────────────────────────────── -->
+  <header class="border-b border-gray-100 px-6 md:px-20 py-20 md:py-32">
+    <p id="modelo-tag" class="text-xs uppercase tracking-widest text-gray-400 mb-10">ZonaProp · Alquileres · Marzo 2026</p>
+    <h1 class="text-6xl md:text-9xl font-black leading-none tracking-tight mb-10 max-w-4xl">
+      Mercado<br>Inmobiliario<br>CABA
+    </h1>
+    <p id="header-desc" class="text-gray-400 text-base max-w-lg leading-relaxed mb-14"></p>
+
+    <!-- toggle -->
+    <div class="inline-flex items-center gap-1 bg-gray-100 p-1 rounded-full">
+      <button id="btn-alquiler"
+        onclick="setMode('alquiler')"
+        data-active="true"
+        class="px-7 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer">
+        Alquiler
+      </button>
+      <button id="btn-venta"
+        onclick="setMode('venta')"
+        data-active="false"
+        class="px-7 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer">
+        Compraventa
+      </button>
+    </div>
+  </header>
+
+  <!-- ─── MAIN ───────────────────────────────────────────────────────────── -->
+  <main id="main-content">
+
+    <!-- 01 / Métricas clave -->
+    <section class="px-6 md:px-20 py-20 md:py-28 border-b border-gray-100">
+      <p class="text-xs uppercase tracking-widest text-gray-400 mb-8">01 / Métricas clave</p>
+      <h2 class="text-4xl md:text-6xl font-black leading-none tracking-tight mb-14">El mercado<br>en números</h2>
+
+      <!-- KPIs del mercado -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-gray-100 border border-gray-100 mb-12">
+        <div class="bg-white p-8 md:p-10">
+          <p class="text-xs uppercase tracking-widest text-gray-400 mb-4">Precio mediano</p>
+          <p class="text-2xl md:text-3xl font-black leading-tight" id="kpi-mediana">—</p>
+        </div>
+        <div class="bg-white p-8 md:p-10">
+          <p class="text-xs uppercase tracking-widest text-gray-400 mb-4">Precio / m²</p>
+          <p class="text-2xl md:text-3xl font-black leading-tight" id="kpi-m2">—</p>
+        </div>
+        <div class="bg-white p-8 md:p-10">
+          <p class="text-xs uppercase tracking-widest text-gray-400 mb-4">Propiedades</p>
+          <p class="text-2xl md:text-3xl font-black leading-tight" id="kpi-n">—</p>
+        </div>
+        <div class="bg-white p-8 md:p-10">
+          <p class="text-xs uppercase tracking-widest text-gray-400 mb-4">Rango P25 – P75</p>
+          <p class="text-xl md:text-2xl font-black leading-tight" id="kpi-rango">—</p>
+        </div>
+      </div>
+
+      <!-- Rango completo + métricas del modelo -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-gray-100 border border-gray-100">
+        <div class="bg-white p-8 md:p-10">
+          <p class="text-xs uppercase tracking-widest text-gray-400 mb-4">P10 (barato)</p>
+          <p class="text-2xl font-black" id="kpi-p10">—</p>
+        </div>
+        <div class="bg-white p-8 md:p-10">
+          <p class="text-xs uppercase tracking-widest text-gray-400 mb-4">P90 (caro)</p>
+          <p class="text-2xl font-black" id="kpi-p90">—</p>
+        </div>
+        <div class="bg-white p-8 md:p-10">
+          <p class="text-xs uppercase tracking-widest text-gray-400 mb-4">R² del modelo</p>
+          <p class="text-2xl font-black" id="kpi-r2">—</p>
+          <p class="text-xs text-gray-400 mt-2">explica el <span id="kpi-r2-pct">—</span>% de la variación</p>
+        </div>
+        <div class="bg-white p-8 md:p-10">
+          <p class="text-xs uppercase tracking-widest text-gray-400 mb-4">Error promedio</p>
+          <p class="text-2xl font-black" id="kpi-mae">—</p>
+          <p class="text-xs text-gray-400 mt-2"><span id="kpi-mae-pct">—</span>% del precio promedio</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 / Distribución de precios -->
+    <section class="px-6 md:px-20 py-20 md:py-28 border-b border-gray-100">
+      <p class="text-xs uppercase tracking-widest text-gray-400 mb-8">02 / Distribución</p>
+      <h2 class="text-4xl md:text-6xl font-black leading-none tracking-tight mb-6">¿Dónde se<br>concentran los precios?</h2>
+      <p class="text-gray-400 max-w-xl leading-relaxed mb-12 text-base">
+        Cada barra muestra un precio aproximado y cuántas propiedades están en ese rango.
+      </p>
+      <div id="dist-chart" class="max-w-3xl"></div>
+    </section>
+
+    <!-- 03 / Ranking de barrios -->
+    <section class="px-6 md:px-20 py-20 md:py-28 border-b border-gray-100">
+      <p class="text-xs uppercase tracking-widest text-gray-400 mb-8">03 / Ranking de barrios</p>
+      <h2 id="ranking-titulo" class="text-4xl md:text-6xl font-black leading-none tracking-tight mb-14">¿Cuánto sale<br>en cada barrio?</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-100">
+              <th class="pb-4 text-left text-xs uppercase tracking-widest text-gray-300 font-normal w-8">#</th>
+              <th class="pb-4 text-left text-xs uppercase tracking-widest text-gray-300 font-normal pr-8">Barrio</th>
+              <th class="pb-4 text-left text-xs uppercase tracking-widest text-gray-300 font-normal pr-8">Mediana</th>
+              <th class="pb-4 text-left text-xs uppercase tracking-widest text-gray-300 font-normal pr-8 hidden md:table-cell">Rango P25–P75</th>
+              <th class="pb-4 text-left text-xs uppercase tracking-widest text-gray-300 font-normal pr-8 hidden md:table-cell">Precio / m²</th>
+              <th class="pb-4 text-left text-xs uppercase tracking-widest text-gray-300 font-normal hidden md:table-cell">N</th>
+            </tr>
+          </thead>
+          <tbody id="ranking-tbody"></tbody>
+        </table>
+      </div>
+      <div id="ranking-search-container" class="mt-12"></div>
+    </section>
+
+    <!-- 04 / Comparador de barrios -->
+    <section class="px-6 md:px-20 py-20 md:py-28 border-b border-gray-100">
+      <p class="text-xs uppercase tracking-widest text-gray-400 mb-8">04 / Comparador</p>
+      <h2 class="text-4xl md:text-6xl font-black leading-none tracking-tight mb-14">Barrio<br>contra barrio</h2>
+
+      <div class="grid grid-cols-2 gap-8 mb-12 max-w-md">
+        <label class="block">
+          <span class="text-xs uppercase tracking-widest text-gray-400 block mb-3">Barrio A</span>
+          <select id="comp-a" onchange="updateComparador()"></select>
+        </label>
+        <label class="block">
+          <span class="text-xs uppercase tracking-widest text-gray-400 block mb-3">Barrio B</span>
+          <select id="comp-b" onchange="updateComparador()"></select>
+        </label>
+      </div>
+
+      <div id="comp-tabla" class="max-w-2xl"></div>
+    </section>
+
+    <!-- 05 / Impacto amenities / features -->
+    <section class="px-6 md:px-20 py-20 md:py-28 border-b border-gray-100">
+      <p class="text-xs uppercase tracking-widest text-gray-400 mb-8">05 / Impacto</p>
+      <h2 id="impacto-titulo" class="text-4xl md:text-6xl font-black leading-none tracking-tight mb-6">¿Cuánto suman<br>los extras?</h2>
+      <p id="impacto-desc" class="text-gray-400 max-w-xl leading-relaxed mb-12 text-base"></p>
+      <div id="impacto-chart" class="max-w-3xl"></div>
+    </section>
+
+    <!-- 06 / Feature importances -->
+    <section class="px-6 md:px-20 py-20 md:py-28 border-b border-gray-100">
+      <p class="text-xs uppercase tracking-widest text-gray-400 mb-8">06 / Modelo</p>
+      <h2 class="text-4xl md:text-6xl font-black leading-none tracking-tight mb-6">¿Qué explica<br>más el precio?</h2>
+      <p class="text-gray-400 max-w-xl leading-relaxed mb-12 text-base">
+        Importancia de cada variable según XGBoost — qué tan seguido usa cada feature para hacer sus predicciones.
+      </p>
+      <div id="importancias-chart" class="max-w-3xl"></div>
+    </section>
+
+    <!-- 07 / Predictor -->
+    <section class="px-6 md:px-20 py-20 md:py-28">
+      <p class="text-xs uppercase tracking-widest text-gray-400 mb-8">07 / Estimador</p>
+      <h2 id="pred-titulo" class="text-4xl md:text-6xl font-black leading-none tracking-tight mb-6">¿Cuánto saldría<br>tu alquiler?</h2>
+      <p class="text-gray-400 max-w-xl leading-relaxed mb-14 text-base">
+        Ingresá las características y el modelo estimará el precio justo.
+      </p>
+
+      <div class="max-w-lg">
+        <!-- barrio + ambientes -->
+        <div class="grid grid-cols-2 gap-10 mb-10">
+          <label class="block">
+            <span class="text-xs uppercase tracking-widest text-gray-400 block mb-3">Barrio</span>
+            <select id="pred-barrio"></select>
+          </label>
+          <label class="block">
+            <span class="text-xs uppercase tracking-widest text-gray-400 block mb-3">Ambientes</span>
+            <select id="pred-amb">
+              <option value="1">1 ambiente</option>
+              <option value="2" selected>2 ambientes</option>
+              <option value="3">3 ambientes</option>
+              <option value="4">4 ambientes</option>
+              <option value="5">5 ambientes</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- m2 + tipo (venta) -->
+        <div class="grid grid-cols-2 gap-10 mb-10">
+          <label class="block">
+            <span class="text-xs uppercase tracking-widest text-gray-400 block mb-3">Superficie (m²)</span>
+            <input type="number" id="pred-m2" value="50" min="20" max="300"
+              class="w-full border-b border-gray-200 pb-2 text-2xl font-black focus:outline-none focus:border-black transition-colors bg-transparent" />
+          </label>
+          <div id="pred-tipo-block" class="hidden">
+            <label class="block">
+              <span class="text-xs uppercase tracking-widest text-gray-400 block mb-3">Tipo</span>
+              <select id="pred-tipo"></select>
+            </label>
+          </div>
+        </div>
+
+        <!-- amenities (alquiler) -->
+        <div id="pred-amenities-block" class="mb-10">
+          <p class="text-xs uppercase tracking-widest text-gray-400 mb-4">Amenities</p>
+          <div id="pred-amenities" class="grid grid-cols-2 gap-3"></div>
+        </div>
+
+        <button onclick="estimate()"
+          class="bg-black text-white px-10 py-4 text-xs uppercase tracking-widest hover:bg-gray-900 transition-colors cursor-pointer">
+          Estimar precio
+        </button>
+
+        <div id="pred-result"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="border-t border-gray-100 px-6 md:px-20 py-10">
+    <p class="text-xs text-gray-300 uppercase tracking-widest">
+      Alquileres: ZonaProp CABA · Marzo 2026 · XGBoost &nbsp;·&nbsp;
+      Compraventa: Properati CABA · 2020 · XGBoost
+    </p>
+  </footer>
+
+  <script src="data_alquiler.js"></script>
+  <script src="data_venta.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+# Data — not committed (large files / proprietary scrape)
+data/raw/
+data/processed/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.optuna/
+
+# Node
+node_modules/
+package-lock.json
+
+# Screenshots — only screenshots/dashboard.png is committed
+screenshot*.png
+
+# Claude internal
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
