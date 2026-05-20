@@ -6,7 +6,7 @@
 **Target:** `log1p(price_ref_usd)` — log del precio mensual en USD; predicciones en USD via `expm1()`
 **Split:** 80% train / 20% test, `random_state=42`
 **Normalización:** no requerida para XGBoost; log-transform aplicado al target (no a features)
-**Tuning:** Optuna — búsqueda bayesiana sobre MAE en log-space, 50 trials en producción, 20 en desarrollo (`--fast`)
+**Tuning:** Optuna — búsqueda bayesiana sobre MAE en log-space, 100 trials en producción, 20 en desarrollo (`--fast`)
 
 ---
 
@@ -14,15 +14,15 @@
 
 | Métrica | Valor | Significado |
 |---|---|---|
-| R² | 0.9242 | 92.4% de la variación del precio explicada |
-| MAE | $80 USD/mes | Error promedio absoluto en USD reales |
-| RMSE | $216 USD/mes | Raíz del error cuadrático medio (sensible a outliers) |
-| MAPE | 7.8% | Error porcentual promedio por propiedad |
-| ±15% | 80.3% | % de predicciones dentro del ±15% del precio real |
-| MAE% | 8.9% | MAE como % del precio promedio |
+| R² | 0.9317 | 93.2% de la variación del precio explicada |
+| MAE | $76 USD/mes | Error promedio absoluto en USD reales |
+| RMSE | $205 USD/mes | Raíz del error cuadrático medio (sensible a outliers) |
+| MAPE | 7.5% | Error porcentual promedio por propiedad |
+| ±15% | 81.5% | % de predicciones dentro del ±15% del precio real |
+| MAE% | 8.5% | MAE como % del precio promedio |
 | Registros | 19.793 | Post feature engineering (dropna barrio + ambientes) |
 
-> Valores con 50 trials (run de producción).
+> Valores con 100 trials (run de producción, 2026-05-20).
 
 ### Comparación de variantes evaluadas (sin retuning)
 
@@ -41,38 +41,42 @@
 
 ## Features usadas
 
-**Base (37 features en total):**
+**Base (41 features en total):**
 
 | Grupo | Features |
 |---|---|
 | Ubicación | `barrio_enc` (label encoding — 46 barrios), `precio_med_barrio` (mediana USD del barrio, calculada en train) |
 | Numéricas | `superficie`, `ambientes`, `dormitorios`, `banos`, `cochera_cantidad` |
-| Derivadas | `m2_por_ambiente`, `amenity_score_edificio`, `amenity_score_depto`, `es_monoambiente`, `tiene_espacio_exterior`, `es_edificio_premium` |
+| Derivadas | `m2_por_ambiente`, `m2_por_bano`, `amenity_score_edificio`, `amenity_score_depto`, `es_monoambiente`, `tiene_espacio_exterior`, `es_edificio_premium` |
+| Calidad/disposición | `disposicion_enc` (Frente=3, Contrafrente=2, Interno=1, Lateral=0, desconocido=−1), `estado_enc` (A estrenar=5…A reciclar=0, desconocido=3) |
+| Publicador | `publisher_enc` (inmobiliaria/desarrolladora=2, particular/emprendimiento=1, desconocido=1) |
 | Amenities edificio | `pileta`, `gimnasio`, `sum`, `parrilla`, `seguridad_24hs`, `ascensor`, `solarium`, `laundry`, `cowork` |
 | Amenities depto | `balcon`, `terraza`, `patio`, `jardin`, `baulera`, `aire_acondicionado`, `calefaccion`, `amoblado` |
 | Condición | `apto_profesional`, `acepta_mascotas`, `apto_credito` |
 
 **Notas:**
-- `expenses_ars` descartada (100% nulos en el dataset)
 - `dormitorios` imputado como `ambientes - 1` donde es nulo (28% de filas, mayormente monoambientes)
+- `disposicion` tiene 54.6% de nulos — el valor −1 es una categoría propia que XGBoost aprende a tratar como "sin información"
+- `estado` tiene 79.7% de nulos — imputado con 3 (Muy bueno = mediana de la distribución)
+- `publisher_enc`: señal posiblemente confundida con barrio premium (inmobiliarias tienen más propiedades caras). Se mantiene porque mejora CV, pero no tiene justificación causal clara.
 - Barrio con label encoding en lugar de one-hot: XGBoost maneja splitting sobre variables ordinales sin explotar dimensionalidad
 
 ---
 
-## Hiperparámetros (mejor trial de Optuna, 50 trials — run de producción)
+## Hiperparámetros (mejor trial de Optuna, 100 trials — run de producción)
 
 | Parámetro | Valor |
 |---|---|
-| `n_estimators` | 766 |
+| `n_estimators` | 806 |
 | `max_depth` | 8 |
-| `learning_rate` | 0.0630 |
-| `subsample` | 0.8783 |
-| `colsample_bytree` | 0.6006 |
-| `min_child_weight` | 4 |
-| `reg_alpha` | 0.264 |
-| `reg_lambda` | 1.903 |
+| `learning_rate` | 0.04256 |
+| `subsample` | 0.9140 |
+| `colsample_bytree` | 0.6756 |
+| `min_child_weight` | 1 |
+| `reg_alpha` | 0.0626 |
+| `reg_lambda` | 0.000220 |
 
-Búsqueda bayesiana con Optuna (CV 5-fold, métrica: MAE en log-space). Mejor CV = 0.0786.
+Búsqueda bayesiana con Optuna (CV 5-fold, métrica: MAE en log-space). Mejor CV = 0.0760.
 
 ---
 
@@ -270,10 +274,57 @@ El panel derecho confirma que pileta/gimnasio es un proxy de "barrio caro/edific
 
 ---
 
+## Features candidatas evaluadas — 2026-05-20
+
+Exploradas columnas del dataset con nulos parciales que no estaban en el modelo.
+
+### Candidatas exploradas
+
+| Columna | % presente | Señal de precio |
+|---|---|---|
+| `disposicion` | 45.4% | Frente $625 vs Lateral $458 (+$167) — señal real |
+| `luminosidad` | 45.5% | Luminoso $625 vs Muy luminoso $608 — sin señal |
+| `estado` | 20.3% | Reciclado $650 > Bueno $458 — confundido con barrio |
+| `publisher_type` | 83.2% | Inmobiliaria > particular en precio — posiblemente espurio |
+
+### Resultados del test (parámetros fijos, 5-fold CV log-MAE)
+
+| Combinación | CV | MAE | MAPE | ±15% |
+|---|---|---|---|---|
+| Baseline producción | 0.0786 | $80 | 7.8% | 80.3% |
+| + disposicion | 0.0778 | $79 | 7.8% | 80.3% |
+| + estado | 0.0782 | $79 | 7.8% | 80.8% |
+| + m2_por_bano | 0.0790 | $80 | 7.9% | 80.6% ↓ |
+| + publisher | 0.0790 | $81 | 7.8% | 80.4% ↓ |
+| + disposicion + estado | 0.0774 | $78 | 7.6% | 81.0% |
+| + disposicion + estado + m2_por_bano | 0.0773 | $78 | 7.6% | 81.2% |
+| **+ disposicion + estado + m2_por_bano + publisher** | **0.0771** | **$77** | **7.6%** | **80.9%** |
+
+### Decisiones
+
+- **`disposicion`**: incorporada. Tiene justificación causal clara (frente > lateral) y mejora CV individualmente.
+- **`estado`**: incorporada. Señal real aunque confundida con barrio; el modelo ya controla por barrio vía `precio_med_barrio`.
+- **`m2_por_bano`**: incorporada. Sola degrada CV pero en combinación ayuda marginalmente. El ratio explícito puede ahorrarle al modelo splits profundos para aprender la relación superficie/baños.
+- **`publisher_enc`**: incorporada con reservas. No tiene justificación causal clara (inmobiliarias tienen más propiedades en barrios caros, el modelo ya controla eso). Se mantiene porque el conjunto de 4 features mejora el CV; si en un re-run sin publisher el CV es igual, se descarta.
+- **`luminosidad`**: descartada. Sin señal ($625 vs $608).
+
+### Con reoptimización Optuna (100 trials)
+
+| Métrica | Antes (50 trials, 37 feat.) | Después (100 trials, 41 feat.) | Δ |
+|---|---|---|---|
+| R² | 0.9242 | **0.9317** | +0.0075 |
+| MAE | $80 | **$76** | −$4 |
+| MAPE | 7.8% | **7.5%** | −0.3% |
+| ±15% | 80.3% | **81.5%** | +1.2% |
+| CV log-MAE | 0.0786 | **0.0760** | −0.0026 |
+
+---
+
 ## Próximos pasos
 
 - [x] Run con 50 trials (sin `--fast`) — completado 2026-05-15
-- [ ] Evaluar separar `es_edificio_premium` como feature exclusiva en lugar de mantener `pileta` y `gimnasio` individualmente
+- [x] Run con 100 trials + features nuevas (disposicion, estado, m2_por_bano, publisher) — completado 2026-05-20
+- [ ] Evaluar quitar publisher_enc — si CV con 41−1=40 features es similar, descartarla
 
 ---
 
@@ -451,3 +502,4 @@ Script: `scripts/eda_viz_venta.py` → `output/eda_venta/`
 | 2026-05-15 | EDA gráfico 4 (m2/ambiente vs precio) mostró dos nubes: barrios baratos (correlación m2/amb-precio = +0.08) vs barrios caros (+0.35). Feature nueva: precio_med_barrio (mediana del barrio, calculada solo en train para evitar leakage). CV 0.0820→0.0802, MAE $85→$81, MAPE 8.2%→8.0%, ±15% 80.5%. Mejor feature engineering del proyecto. R²=0.9245, MAE=$81, RMSE=$216. |
 | 2026-05-15 | Normalización de barrios: "Nuñez" y "San Nicolás" tenían codepoints latin-1 (U+00FA, U+00F1, U+00E1) por encoding del scraper. Agregada función _normalize_barrio() en clean_data.py que mapea cualquier variante Unicode al nombre canónico via _strip_accents. Nombres ahora correctos en exports. Run de producción (50 trials): R²=0.9242, MAE=$80, MAPE=7.8%, ±15%=80.3%. |
 | 2026-05-15 | Modelo B (ventas): portadas mejoras de alquileres — log-transform del target, precio_med_barrio (sin leakage), Optuna en log-space, métricas completas (MAPE/RMSE/±15%). R²=0.8683→0.8729, MAE=$42.573→$41.428 (−2.7%, --fast). EDA ventas generado: 6 gráficos en output/eda_venta/, documentados en modelo.md. |
+| 2026-05-20 | Feature engineering: exploradas columnas parcialmente nulas del dataset. Incorporadas 4 features nuevas: disposicion_enc (45% presente, ordinal Frente=3..Lateral=0, missing=−1), estado_enc (20% presente, ordinal calidad, missing=3), m2_por_bano, publisher_enc. luminosidad descartada (sin señal). Run de producción con 100 trials: R²=0.9242→0.9317, MAE=$80→$76, MAPE=7.8%→7.5%, ±15%=80.3%→81.5%, CV=0.0786→0.0760. |

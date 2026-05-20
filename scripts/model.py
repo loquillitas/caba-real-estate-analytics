@@ -69,6 +69,16 @@ AMENITY_LABELS = {
     "apto_credito":       "Apto crédito",
 }
 
+DISPOSICION_MAP = {"Frente": 3, "Contrafrente": 2, "Interno": 1, "Lateral": 0}
+ESTADO_MAP = {
+    "A estrenar": 5, "Excelente": 4, "Muy bueno": 3,
+    "Bueno": 2, "Reciclado": 1, "A reciclar": 0,
+}
+PUBLISHER_MAP = {
+    "Inmobiliaria": 2, "Desarrolladora": 2,
+    "Particular": 1, "Emprendimiento": 1,
+}
+
 FEATURE_LABELS = {
     "barrio_enc":              "Barrio",
     "precio_med_barrio":       "Precio mediano del barrio",
@@ -78,11 +88,15 @@ FEATURE_LABELS = {
     "banos":                   "Baños",
     "cochera_cantidad":        "Cochera",
     "m2_por_ambiente":         "m² por ambiente",
+    "m2_por_bano":             "m² por baño",
     "amenity_score_edificio":  "Score amenities edificio",
     "amenity_score_depto":     "Score amenities depto",
     "es_monoambiente":         "Es monoambiente",
     "tiene_espacio_exterior":  "Espacio exterior",
     "es_edificio_premium":     "Edificio premium",
+    "disposicion_enc":         "Disposición",
+    "estado_enc":              "Estado del inmueble",
+    "publisher_enc":           "Tipo de publicador",
     **AMENITY_LABELS,
 }
 
@@ -124,6 +138,19 @@ def load_and_engineer(path: Path) -> tuple[pd.DataFrame, LabelEncoder]:
         & df["seguridad_24hs"].astype(bool)
     ).astype(int)
 
+    # disposicion — ordinal por precio observado (missing=-1: categoría propia)
+    df["disposicion_enc"] = df["disposicion"].map(DISPOSICION_MAP).fillna(-1).astype(int)
+
+    # estado — ordinal por calidad declarada (missing=3: mediana de la distribución)
+    df["estado_enc"] = df["estado"].map(ESTADO_MAP).fillna(3).astype(float)
+
+    # m2 por baño
+    df["m2_por_bano"] = (df["superficie"] / df["banos"].replace(0, 1)).round(2)
+
+    # publisher_type (missing=1)
+    if "publisher_type" in df.columns:
+        df["publisher_enc"] = df["publisher_type"].map(PUBLISHER_MAP).fillna(1).astype(int)
+
     # barrio → label encoding (XGBoost lo maneja bien con tree splits)
     le = LabelEncoder()
     df["barrio_enc"] = le.fit_transform(df["barrio"])
@@ -134,9 +161,10 @@ def load_and_engineer(path: Path) -> tuple[pd.DataFrame, LabelEncoder]:
 def get_feature_cols(df: pd.DataFrame) -> list[str]:
     base = [
         "barrio_enc", "precio_med_barrio", "superficie", "ambientes", "dormitorios", "banos",
-        "cochera_cantidad", "m2_por_ambiente",
+        "cochera_cantidad", "m2_por_ambiente", "m2_por_bano",
         "amenity_score_edificio", "amenity_score_depto",
         "es_monoambiente", "tiene_espacio_exterior", "es_edificio_premium",
+        "disposicion_enc", "estado_enc", "publisher_enc",
     ]
     amenities = [c for c in ALL_AMENITIES if c in df.columns]
     return [c for c in base if c in df.columns] + amenities
@@ -365,20 +393,25 @@ def build_predictor(
             filas = []
             for m2 in M2_GRID:
                 fila = {col: 0 for col in feature_cols}
+                banos_ref = 1 if amb <= 2 else 2
                 fila.update({
                     "barrio_enc":             barrio_enc,
                     "precio_med_barrio":      barrio_price,
                     "superficie":             m2,
                     "ambientes":              amb,
                     "dormitorios":            max(0, amb - 1),
-                    "banos":                  1 if amb <= 2 else 2,
+                    "banos":                  banos_ref,
                     "cochera_cantidad":        0,
                     "m2_por_ambiente":        round(m2 / amb, 2),
+                    "m2_por_bano":            round(m2 / banos_ref, 2),
                     "amenity_score_edificio": 0,
                     "amenity_score_depto":    0,
                     "es_monoambiente":        int(amb == 1),
                     "tiene_espacio_exterior": 0,
                     "es_edificio_premium":    0,
+                    "disposicion_enc":        -1,   # desconocido
+                    "estado_enc":             3,    # Muy bueno (mediana)
+                    "publisher_enc":          1,    # desconocido
                 })
                 filas.append(fila)
 
@@ -391,22 +424,27 @@ def build_predictor(
     barrio_ref_price = float(barrio_med.get(barrio_ref, global_med_precio)) if barrio_med is not None else \
                        float(df.loc[df["barrio"] == barrio_ref, "precio_med_barrio"].iloc[0])
     fila_ref = {col: 0 for col in feature_cols}
+    sup_med  = df["superficie"].median()
+    amb_med  = df["ambientes"].median()
+    bano_med = df["banos"].median()
     fila_ref.update({
         "barrio_enc":             barrio_ref_enc,
         "precio_med_barrio":      barrio_ref_price,
-        "superficie":             int(df["superficie"].median()),
-        "ambientes":              int(df["ambientes"].median()),
+        "superficie":             int(sup_med),
+        "ambientes":              int(amb_med),
         "dormitorios":            int(df["dormitorios"].median()),
-        "banos":                  int(df["banos"].median()),
+        "banos":                  int(bano_med),
         "cochera_cantidad":        0,
-        "m2_por_ambiente":        round(
-            df["superficie"].median() / df["ambientes"].median(), 2
-        ),
+        "m2_por_ambiente":        round(sup_med / amb_med, 2),
+        "m2_por_bano":            round(sup_med / bano_med, 2),
         "amenity_score_edificio": 0,
         "amenity_score_depto":    0,
         "es_monoambiente":        0,
         "tiene_espacio_exterior": 0,
         "es_edificio_premium":    0,
+        "disposicion_enc":        -1,
+        "estado_enc":             3,
+        "publisher_enc":          1,
     })
 
     amenity_deltas = {}

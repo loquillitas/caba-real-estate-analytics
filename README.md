@@ -15,13 +15,13 @@ Scraped 24,500 listings from ZonaProp, trained two XGBoost models tuned with Opt
 
 | | Rentals (ZonaProp 2026) | Sales (Properati 2020) |
 |---|---|---|
-| **R²** | **0.924** | 0.873 |
-| **MAE** | **$80 / month** | $41,400 |
-| **MAPE** | **7.8%** | 16.3% |
-| **Within ±15%** | **80.3%** of predictions | 56.9% |
+| **R²** | **0.932** | 0.873 |
+| **MAE** | **$76 / month** | $41,400 |
+| **MAPE** | **7.5%** | 16.3% |
+| **Within ±15%** | **81.5%** of predictions | 56.9% |
 | Records | 19,793 | 44,869 |
 | Neighborhoods | 46 | 57 |
-| Features | 37 | 13 |
+| Features | 41 | 13 |
 
 > The sales model's higher error reflects structural difficulty: price range spans $57K–$1.58M (25× wider than rentals) with no amenity data available.
 
@@ -140,7 +140,9 @@ Properati requires deduplication: 42,654 re-listings (46% of raw) removed, keepi
 |-------|----------|
 | Location | `barrio_enc` (label encoding, 46 barrios), `precio_med_barrio` (neighborhood median from train set only) |
 | Size | `superficie`, `ambientes`, `dormitorios`, `banos`, `cochera_cantidad` |
-| Engineered | `m2_por_ambiente`, `amenity_score_edificio`, `amenity_score_depto`, `es_monoambiente`, `tiene_espacio_exterior`, `es_edificio_premium` |
+| Engineered | `m2_por_ambiente`, `m2_por_bano`, `amenity_score_edificio`, `amenity_score_depto`, `es_monoambiente`, `tiene_espacio_exterior`, `es_edificio_premium` |
+| Quality / layout | `disposicion_enc` (Frente=3 → Lateral=0, unknown=−1), `estado_enc` (A estrenar=5 → A reciclar=0, unknown=3) |
+| Publisher | `publisher_enc` (agency=2, individual=1) |
 | Building amenities | `pileta`, `gimnasio`, `sum`, `parrilla`, `seguridad_24hs`, `ascensor`, `solarium`, `laundry`, `cowork` |
 | Unit amenities | `balcon`, `terraza`, `patio`, `jardin`, `baulera`, `aire_acondicionado`, `calefaccion`, `amoblado` |
 | Conditions | `apto_profesional`, `acepta_mascotas`, `apto_credito` |
@@ -173,7 +175,8 @@ Bayesian search with Optuna (5-fold CV, MAE in log-space):
 | LinearRegression baseline | 0.897 | $89 | 9.3% |
 | XGBoost + Optuna | 0.910 | $84 | 8.2% |
 | + log1p target transform | 0.923 | $82 | — |
-| + `precio_med_barrio` feature | **0.924** | **$80** | **7.8%** |
+| + `precio_med_barrio` feature | 0.924 | $80 | 7.8% |
+| + disposicion / estado / m2_por_bano / publisher (100 trials) | **0.932** | **$76** | **7.5%** |
 
 ---
 
