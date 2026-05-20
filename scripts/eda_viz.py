@@ -237,7 +237,7 @@ def plot_amenity_delta(df):
             continue
         con = df[df[col] == 1]["price_ref_usd"]
         sin = df[df[col] == 0]["price_ref_usd"]
-        if len(con) < 30:
+        if len(con) < 200:
             continue
         delta = con.median() - sin.median()
         results.append({
