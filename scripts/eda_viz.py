@@ -91,7 +91,7 @@ def plot_correlation(df):
 # ── 2. Heatmap de co-ocurrencia de amenities ──────────────────────────────────
 
 def plot_amenity_coocurrence(df):
-    cols = [c for c in ALL_AMENITIES if c in df.columns]
+    cols = [c for c in AMENITY_EDIFICIO if c in df.columns]
     labels = [AMENITY_LABELS.get(c, c) for c in cols]
 
     # Frecuencia condicional: P(A | B) = prop con ambos / prop con B
@@ -274,6 +274,71 @@ def plot_amenity_delta(df):
     print(f"  Guardado: {out.name}")
 
 
+# ── 7. Dos mercados: m2/ambiente vs precio, coloreado por tercil de barrio ────
+
+def plot_dos_mercados(df):
+    medians = df.groupby("barrio")["price_ref_usd"].median()
+    p33, p66 = medians.quantile(0.33), medians.quantile(0.66)
+
+    def categoria(barrio):
+        med = medians.get(barrio, medians.median())
+        if med <= p33:  return "Barrio barato (P0–P33)"
+        if med <= p66:  return "Barrio medio (P33–P66)"
+        return "Barrio caro (P66–P100)"
+
+    df = df.copy()
+    df["cat_barrio"] = df["barrio"].map(categoria)
+
+    TERCIL_COLORS = {
+        "Barrio barato (P0–P33)":  "#4472C4",   # azul
+        "Barrio medio (P33–P66)":  "#ED7D31",   # naranja
+        "Barrio caro (P66–P100)":  "#C00000",   # rojo oscuro
+    }
+    AMENITY_COLORS = {
+        "Sin pileta ni gimnasio": "#BBBBBB",
+        "Con pileta y/o gimnasio": "#C00000",
+    }
+
+    fmt = mticker.FuncFormatter(lambda x, _: f"${x:,.0f}")
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Panel izquierdo — por tercil de barrio
+    for cat, color in TERCIL_COLORS.items():
+        sub = df[df["cat_barrio"] == cat]
+        axes[0].scatter(sub["m2_por_ambiente"], sub["price_ref_usd"],
+                        alpha=0.25, s=6, color=color, label=cat, rasterized=True)
+    axes[0].set_xlabel("m2 por ambiente")
+    axes[0].set_ylabel("Precio USD/mes")
+    axes[0].set_title("m2/ambiente vs precio — por tercil de barrio")
+    axes[0].legend(markerscale=3, fontsize=8, framealpha=0.8)
+    axes[0].yaxis.set_major_formatter(fmt)
+    axes[0].set_xlim(0, 120)
+    axes[0].set_ylim(0, 4000)
+
+    # Panel derecho — por presencia de pileta/gimnasio
+    df["tiene_premium"] = ((df.get("pileta", 0) == 1) | (df.get("gimnasio", 0) == 1))
+    for label, mask, color in [
+        ("Sin pileta ni gimnasio",   ~df["tiene_premium"], "#BBBBBB"),
+        ("Con pileta y/o gimnasio",   df["tiene_premium"], "#C00000"),
+    ]:
+        sub = df[mask]
+        axes[1].scatter(sub["m2_por_ambiente"], sub["price_ref_usd"],
+                        alpha=0.25, s=6, color=color, label=label, rasterized=True)
+    axes[1].set_xlabel("m2 por ambiente")
+    axes[1].set_ylabel("Precio USD/mes")
+    axes[1].set_title("m2/ambiente vs precio — por pileta/gimnasio")
+    axes[1].legend(markerscale=3, fontsize=8, framealpha=0.8)
+    axes[1].yaxis.set_major_formatter(fmt)
+    axes[1].set_xlim(0, 120)
+    axes[1].set_ylim(0, 4000)
+
+    plt.tight_layout()
+    out = OUT_DIR / "07_m2amb_precio_coloreado.png"
+    plt.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  Guardado: {out.name}")
+
+
 def main():
     print("Cargando datos...")
     df = load()
@@ -286,6 +351,7 @@ def main():
     plot_scatter_m2_precio(df)
     plot_heatmap_amb_banos(df)
     plot_amenity_delta(df)
+    plot_dos_mercados(df)
 
     print(f"\nTodos los graficos en: {OUT_DIR}")
 
