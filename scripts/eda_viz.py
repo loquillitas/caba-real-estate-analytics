@@ -262,10 +262,10 @@ def plot_amenity_delta(df):
     # annotate prevalence
     for bar, r in zip(bars, results):
         x = bar.get_width()
-        ax.text(x + (5 if x >= 0 else -5),
+        ax.text(max(x, 0) + 5,
                 bar.get_y() + bar.get_height() / 2,
                 f"{r['pct']:.0f}%  (n={r['n_con']:,})",
-                va="center", ha="left" if x >= 0 else "right", fontsize=7.5, color="#666")
+                va="center", ha="left", fontsize=7.5, color="#666")
     ax.grid(axis="x", linewidth=0.4, alpha=0.5)
     plt.tight_layout()
     out = OUT_DIR / "06_delta_amenity_crudo.png"
