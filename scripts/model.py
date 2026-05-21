@@ -209,22 +209,39 @@ def train_final(X_train, X_test, y_train_log, y_test_raw, y_train_raw, best_para
     params = {"n_estimators": 1000, **best_params}
     model  = XGBRegressor(**params, early_stopping_rounds=50, random_state=42, n_jobs=-1, verbosity=0)
     model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
-    y_pred = np.expm1(model.predict(X_test))            # predice en USD reales
-    y_pred = np.expm1(model.predict(X_test))            # predice en USD reales
+
+    def _eval(y_true_raw, y_pred_raw):
+        mae = float(mean_absolute_error(y_true_raw, y_pred_raw))
+        return {
+            "r2":   round(float(r2_score(y_true_raw, y_pred_raw)), 4),
+            "mae":  round(mae, 2),
+            "mape": round(float(np.mean(np.abs((y_true_raw - y_pred_raw) / y_true_raw)) * 100), 1),
+        }
+
+    tr_m  = _eval(np.expm1(y_tr),  np.expm1(model.predict(X_tr)))
+    val_m = _eval(np.expm1(y_val), np.expm1(model.predict(X_val)))
+
+    y_pred = np.expm1(model.predict(X_test))
     mae  = float(mean_absolute_error(y_test_raw, y_pred))
     rmse = float(np.sqrt(mean_squared_error(y_test_raw, y_pred)))
     mape = float(np.mean(np.abs((y_test_raw - y_pred) / y_test_raw)) * 100)
     pct15 = float(np.mean(np.abs(y_pred - y_test_raw) <= y_test_raw * 0.15) * 100)
     metrics = {
-        "r2":           round(float(r2_score(y_test_raw, y_pred)), 4),
-        "mae":          round(mae, 2),
-        "rmse":         round(rmse, 2),
-        "mae_pct":      round(mae / y_train_raw.mean() * 100, 1),
-        "mape":         round(mape, 1),
+        "r2":            round(float(r2_score(y_test_raw, y_pred)), 4),
+        "mae":           round(mae, 2),
+        "rmse":          round(rmse, 2),
+        "mae_pct":       round(mae / y_train_raw.mean() * 100, 1),
+        "mape":          round(mape, 1),
         "pct_dentro_15": round(pct15, 1),
-        "n_train":      int(len(X_train)),
-        "n_test":       int(len(X_test)),
-        "total_data":   int(len(X_train) + len(X_test)),
+        "n_train":       int(len(X_train)),
+        "n_test":        int(len(X_test)),
+        "total_data":    int(len(X_train) + len(X_test)),
+        "train_r2":      tr_m["r2"],
+        "train_mae":     tr_m["mae"],
+        "train_mape":    tr_m["mape"],
+        "val_r2":        val_m["r2"],
+        "val_mae":       val_m["mae"],
+        "val_mape":      val_m["mape"],
     }
     return model, metrics
 
@@ -494,7 +511,7 @@ def main():
     parser.add_argument("--trials", type=int,            help="número de trials Optuna")
     args = parser.parse_args()
 
-    n_trials = 20 if args.fast else (args.trials or 50)
+    n_trials = 20 if args.fast else (args.trials or 100)
 
     print("Cargando y preparando features...")
     df, le = load_and_engineer(DATA_PATH)
@@ -526,10 +543,11 @@ def main():
 
     print("\nEntrenando modelo final con mejores parámetros...")
     model, metrics = train_final(X_train, X_test, y_train_log, y_test_raw, y_train_raw, best_params)
-    print(f"  R²:    {metrics['r2']}  ({metrics['r2']*100:.1f}% de la variación explicada)")
-    print(f"  MAE:   USD {metrics['mae']:,.0f}/mes  ({metrics['mae_pct']}% del precio promedio)")
-    print(f"  RMSE:  USD {metrics['rmse']:,.0f}/mes")
-    print(f"  MAPE:  {metrics['mape']}%")
+    print(f"\n  {'Split':<10} {'R²':>7}  {'MAE (USD/mes)':>14}  {'MAPE':>6}")
+    print(f"  {'Train':<10} {metrics['train_r2']:>7.4f}  {metrics['train_mae']:>14,.0f}  {metrics['train_mape']:>5.1f}%")
+    print(f"  {'Val (ES)':<10} {metrics['val_r2']:>7.4f}  {metrics['val_mae']:>14,.0f}  {metrics['val_mape']:>5.1f}%")
+    print(f"  {'Test':<10} {metrics['r2']:>7.4f}  {metrics['mae']:>14,.0f}  {metrics['mape']:>5.1f}%")
+    print(f"\n  RMSE:  USD {metrics['rmse']:,.0f}/mes")
     print(f"  ±15%:  {metrics['pct_dentro_15']}% de las predicciones dentro del rango")
 
     print("\nCalculando estadísticas del mercado...")

@@ -15,10 +15,11 @@ Scraped 24,500 listings from ZonaProp, trained two XGBoost models tuned with Opt
 
 | | Rentals (ZonaProp 2026) | Sales (Properati 2020) |
 |---|---|---|
-| **R²** | **0.932** | **0.920** |
-| **MAE** | **$76 / month** | **$31,289** |
-| **MAPE** | **7.5%** | **12.4%** |
-| **Within ±15%** | **81.5%** of predictions | **69.9%** |
+| **R²** | **0.932** | **0.917** |
+| **MAE** | **$81 / month** | **$31,360** |
+| **MAPE** | **8.1%** | **12.4%** |
+| **Within ±15%** | **80.9%** of predictions | **70.0%** |
+| Train R² | 0.985 | 0.997 |
 | Records | 19,793 | 44,869 |
 | Neighborhoods | 46 | 57 |
 | Features | 41 | 43 |

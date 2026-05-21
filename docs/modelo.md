@@ -14,15 +14,24 @@
 
 | Métrica | Valor | Significado |
 |---|---|---|
-| R² | 0.9317 | 93.2% de la variación del precio explicada |
-| MAE | $76 USD/mes | Error promedio absoluto en USD reales |
-| RMSE | $205 USD/mes | Raíz del error cuadrático medio (sensible a outliers) |
-| MAPE | 7.5% | Error porcentual promedio por propiedad |
-| ±15% | 81.5% | % de predicciones dentro del ±15% del precio real |
-| MAE% | 8.5% | MAE como % del precio promedio |
+| R² | 0.9325 | 93.2% de la variación del precio explicada |
+| MAE | $81 USD/mes | Error promedio absoluto en USD reales |
+| RMSE | $204 USD/mes | Raíz del error cuadrático medio (sensible a outliers) |
+| MAPE | 8.1% | Error porcentual promedio por propiedad |
+| ±15% | 80.9% | % de predicciones dentro del ±15% del precio real |
 | Registros | 19.793 | Post feature engineering (dropna barrio + ambientes) |
 
-> Valores con 100 trials (run de producción, 2026-05-20).
+> Valores con 100 trials (run de producción, 2026-05-21). CV log-MAE = 0.0781.
+
+### Train / Val / Test
+
+| Split | R² | MAE | MAPE | Nota |
+|---|---|---|---|---|
+| Train | 0.9846 | $44 | 5.0% | Datos vistos durante el fit |
+| Val (early stopping) | 0.9349 | $78 | 7.9% | Holdout 10% usado para frenar el training |
+| **Test** | **0.9325** | **$81** | **8.1%** | **20% completamente apartado** |
+
+Val ≈ Test confirma ausencia de leakage. El gap Train→Test (R² −0.052) es el esperado para XGBoost: el modelo memoriza bien el train set pero generaliza correctamente.
 
 ### Comparación de variantes evaluadas (sin retuning)
 
@@ -378,13 +387,24 @@ Documento completo: `docs/data_cleaning.html` (previsualizar con Ctrl+Shift+V en
 
 | Métrica | Valor | Significado |
 |---|---|---|
-| R² | 0.9195 | 91.9% de la variación explicada |
-| MAE | $31.289 USD | Error absoluto promedio |
+| R² | 0.9173 | 91.7% de la variación explicada |
+| MAE | $31.360 USD | Error absoluto promedio |
+| RMSE | $59.228 USD | Raíz del error cuadrático |
 | MAPE | 12.4% | Error porcentual promedio |
-| ±15% | 69.9% | % de predicciones dentro del ±15% |
+| ±15% | 70.0% | % de predicciones dentro del ±15% |
 | Registros | 44.869 | |
 
-> Valores con 100 trials + early stopping (n_estimators=1000 ceiling, early_stopping_rounds=50). CV log-MAE=0.1233. MAPE 12.4% vs 7.5% en alquileres — esperable: rango de precios 25× más amplio ($57K–$1.58M), sin amenities, sin data de estado/calidad.
+> Valores con 100 trials + early stopping (n_estimators=1000 ceiling, early_stopping_rounds=50). CV log-MAE=0.1238. MAPE 12.4% vs 8.1% en alquileres — esperable: rango de precios 25× más amplio ($57K–$1.58M), sin amenities, sin data de estado/calidad.
+
+### Train / Val / Test
+
+| Split | R² | MAE | MAPE | Nota |
+|---|---|---|---|---|
+| Train | 0.9968 | $6.907 | 2.9% | Datos vistos durante el fit |
+| Val (early stopping) | 0.9184 | $32.555 | 12.6% | Holdout 10% usado para frenar el training |
+| **Test** | **0.9173** | **$31.360** | **12.4%** | **20% completamente apartado** |
+
+Val ≈ Test confirma ausencia de leakage. El gap Train→Test es mayor que en alquileres (R² −0.079 vs −0.052) por la mayor varianza del precio de venta. La MAE de train ($6.907) vs test ($31.360) refleja que XGBoost puede memorizar precios individuales pero generaliza a nivel de segmento de mercado.
 
 ### Evolución de métricas
 
@@ -520,4 +540,5 @@ Script: `scripts/eda_viz_venta.py` → `output/eda_venta/`
 | 2026-05-15 | Normalización de barrios: "Nuñez" y "San Nicolás" tenían codepoints latin-1 (U+00FA, U+00F1, U+00E1) por encoding del scraper. Agregada función _normalize_barrio() en clean_data.py que mapea cualquier variante Unicode al nombre canónico via _strip_accents. Nombres ahora correctos en exports. Run de producción (50 trials): R²=0.9242, MAE=$80, MAPE=7.8%, ±15%=80.3%. |
 | 2026-05-15 | Modelo B (ventas): portadas mejoras de alquileres — log-transform del target, precio_med_barrio (sin leakage), Optuna en log-space, métricas completas (MAPE/RMSE/±15%). R²=0.8683→0.8729, MAE=$42.573→$41.428 (−2.7%, --fast). EDA ventas generado: 6 gráficos en output/eda_venta/, documentados en modelo.md. |
 | 2026-05-20 | Feature engineering: exploradas columnas parcialmente nulas del dataset. Incorporadas 4 features nuevas: disposicion_enc (45% presente, ordinal Frente=3..Lateral=0, missing=−1), estado_enc (20% presente, ordinal calidad, missing=3), m2_por_bano, publisher_enc. luminosidad descartada (sin señal). Run de producción con 100 trials: R²=0.9242→0.9317, MAE=$80→$76, MAPE=7.8%→7.5%, ±15%=80.3%→81.5%, CV=0.0786→0.0760. |
+| 2026-05-21 | Agregadas métricas train/val/test a model.py y model_venta.py. Alquileres: Train R²=0.9846/MAE=$44, Val R²=0.9349/MAE=$78, Test R²=0.9325/MAE=$81. Gap train→test esperado, Val≈Test confirma sin leakage. statsmodels agregado a requirements.txt (LOWESS en eda_viz.py). |
 | 2026-05-21 | Modelo ventas (model_venta.py): 27 features nuevas — 21 text/título (amenities extraídos del texto, piso, condición, disposición), 4 geo (distancia a Obelisco, Puerto Madero, Palermo, Belgrano con corrección equirectangular), 2 temporales (dias_en_mercado, mes_publicacion) — + precio_med_barrio_tipo (barrio×property_type, calculada en train sin leakage). Early stopping: n_estimators=1000 ceiling, early_stopping_rounds=50. 100 trials Optuna. R²=0.8729→0.9195, MAE=$41.428→$31.289, MAPE=16.3%→12.4%, ±15%=56.9%→69.9%, CV=0.1233. |

@@ -11,6 +11,7 @@ import matplotlib.ticker as mticker
 import seaborn as sns
 from pathlib import Path
 from sklearn.preprocessing import LabelEncoder
+from statsmodels.nonparametric.smoothers_lowess import lowess
 
 warnings.filterwarnings("ignore")
 plt.rcParams.update({"font.family": "sans-serif", "font.size": 10})
@@ -278,56 +279,60 @@ def plot_amenity_delta(df):
 
 def plot_dos_mercados(df):
     medians = df.groupby("barrio")["price_ref_usd"].median()
-    p33, p66 = medians.quantile(0.33), medians.quantile(0.66)
-
-    def categoria(barrio):
-        med = medians.get(barrio, medians.median())
-        if med <= p33:  return "Barrio barato (P0–P33)"
-        if med <= p66:  return "Barrio medio (P33–P66)"
-        return "Barrio caro (P66–P100)"
+    p50 = medians.median()
 
     df = df.copy()
-    df["cat_barrio"] = df["barrio"].map(categoria)
+    df["cat_barrio"] = df["barrio"].map(
+        lambda b: "Barrio caro (P50–P100)" if medians.get(b, p50) > p50 else "Barrio barato (P0–P50)"
+    )
+    df["tiene_premium"] = ((df.get("pileta", 0) == 1) | (df.get("gimnasio", 0) == 1))
 
-    TERCIL_COLORS = {
-        "Barrio barato (P0–P33)":  "#4472C4",   # azul
-        "Barrio medio (P33–P66)":  "#ED7D31",   # naranja
-        "Barrio caro (P66–P100)":  "#C00000",   # rojo oscuro
-    }
-    AMENITY_COLORS = {
-        "Sin pileta ni gimnasio": "#BBBBBB",
-        "Con pileta y/o gimnasio": "#C00000",
-    }
+    GROUPS_BARRIO = [
+        ("Barrio barato (P0–P50)",   df["cat_barrio"] == "Barrio barato (P0–P50)",   "#4472C4"),
+        ("Barrio caro (P50–P100)",   df["cat_barrio"] == "Barrio caro (P50–P100)",   "#C00000"),
+    ]
+    GROUPS_AMENITY = [
+        ("Sin pileta ni gimnasio",  ~df["tiene_premium"], "#4472C4"),
+        ("Con pileta y/o gimnasio",  df["tiene_premium"], "#C00000"),
+    ]
+
+    def add_lowess(ax, x_vals, y_vals, color):
+        tmp = pd.DataFrame({"x": x_vals, "y": y_vals}).dropna()
+        tmp = tmp[(tmp["x"] >= 12) & (tmp["x"] <= 70)].sort_values("x")
+        if len(tmp) < 100:
+            return
+        smoothed = lowess(tmp["y"], tmp["x"], frac=0.25, it=1, return_sorted=True)
+        ax.plot(smoothed[:, 0], smoothed[:, 1], color=color, lw=2.5, zorder=5)
 
     fmt = mticker.FuncFormatter(lambda x, _: f"${x:,.0f}")
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-    # Panel izquierdo — por tercil de barrio
-    for cat, color in TERCIL_COLORS.items():
-        sub = df[df["cat_barrio"] == cat]
+    for label, mask, color in GROUPS_BARRIO:
+        sub = df[mask]
         axes[0].scatter(sub["m2_por_ambiente"], sub["price_ref_usd"],
-                        alpha=0.25, s=6, color=color, label=cat, rasterized=True)
+                        alpha=0.12, s=5, color=color, rasterized=True)
+    for label, mask, color in GROUPS_BARRIO:
+        add_lowess(axes[0], df.loc[mask, "m2_por_ambiente"], df.loc[mask, "price_ref_usd"], color)
+        axes[0].scatter([], [], s=40, color=color, label=label)
     axes[0].set_xlabel("m2 por ambiente")
     axes[0].set_ylabel("Precio USD/mes")
-    axes[0].set_title("m2/ambiente vs precio — por tercil de barrio")
-    axes[0].legend(markerscale=3, fontsize=8, framealpha=0.8)
+    axes[0].set_title("m2/ambiente vs precio — por precio del barrio")
+    axes[0].legend(fontsize=8, framealpha=0.8)
     axes[0].yaxis.set_major_formatter(fmt)
     axes[0].set_xlim(0, 120)
     axes[0].set_ylim(0, 4000)
 
-    # Panel derecho — por presencia de pileta/gimnasio
-    df["tiene_premium"] = ((df.get("pileta", 0) == 1) | (df.get("gimnasio", 0) == 1))
-    for label, mask, color in [
-        ("Sin pileta ni gimnasio",   ~df["tiene_premium"], "#BBBBBB"),
-        ("Con pileta y/o gimnasio",   df["tiene_premium"], "#C00000"),
-    ]:
+    for label, mask, color in GROUPS_AMENITY:
         sub = df[mask]
         axes[1].scatter(sub["m2_por_ambiente"], sub["price_ref_usd"],
-                        alpha=0.25, s=6, color=color, label=label, rasterized=True)
+                        alpha=0.12, s=5, color=color, rasterized=True)
+    for label, mask, color in GROUPS_AMENITY:
+        add_lowess(axes[1], df.loc[mask, "m2_por_ambiente"], df.loc[mask, "price_ref_usd"], color)
+        axes[1].scatter([], [], s=40, color=color, label=label)
     axes[1].set_xlabel("m2 por ambiente")
     axes[1].set_ylabel("Precio USD/mes")
     axes[1].set_title("m2/ambiente vs precio — por pileta/gimnasio")
-    axes[1].legend(markerscale=3, fontsize=8, framealpha=0.8)
+    axes[1].legend(fontsize=8, framealpha=0.8)
     axes[1].yaxis.set_major_formatter(fmt)
     axes[1].set_xlim(0, 120)
     axes[1].set_ylim(0, 4000)
