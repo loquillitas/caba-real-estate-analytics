@@ -378,22 +378,38 @@ Documento completo: `docs/data_cleaning.html` (previsualizar con Ctrl+Shift+V en
 
 | Métrica | Valor | Significado |
 |---|---|---|
-| R² | 0.8729 | 87.3% de la variación explicada |
-| MAE | $41.428 USD | Error absoluto promedio |
-| RMSE | $73.410 USD | Raíz del error cuadrático |
-| MAPE | 16.3% | Error porcentual promedio |
-| ±15% | 56.9% | % de predicciones dentro del ±15% |
-| MAE% | 16.9% | MAE como % del precio promedio |
+| R² | 0.9195 | 91.9% de la variación explicada |
+| MAE | $31.289 USD | Error absoluto promedio |
+| MAPE | 12.4% | Error porcentual promedio |
+| ±15% | 69.9% | % de predicciones dentro del ±15% |
 | Registros | 44.869 | |
 
-> Valores con `--fast` (20 trials). MAPE 16.3% vs 7.8% en alquileres — esperable: rango de precios 25× más amplio ($57K–$1.58M), sin amenities, sin data de estado/calidad.
+> Valores con 100 trials + early stopping (n_estimators=1000 ceiling, early_stopping_rounds=50). CV log-MAE=0.1233. MAPE 12.4% vs 7.5% en alquileres — esperable: rango de precios 25× más amplio ($57K–$1.58M), sin amenities, sin data de estado/calidad.
 
 ### Evolución de métricas
 
 | Run | R² | MAE | Cambios |
 |---|---|---|---|
 | Baseline (sin log, sin precio_med_barrio, --fast) | 0.8683 | $42.573 | — |
-| **Log-transform + precio_med_barrio (--fast)** | **0.8729** | **$41.428** | −$1.145 (−2.7%) |
+| Log-transform + precio_med_barrio (--fast) | 0.8729 | $41.428 | −$1.145 (−2.7%) |
+| **+ text/título + geo + temporal + precio_med_barrio_tipo (100 trials)** | **0.9195** | **$31.289** | **−$10.139 (−24.5%)** |
+
+### Hiperparámetros (mejor trial de Optuna, 100 trials)
+
+| Parámetro | Valor |
+|---|---|
+| `n_estimators` | ≤1000 (early_stopping_rounds=50) |
+| `max_depth` | 8 |
+| `learning_rate` | 0.0640 |
+| `subsample` | 0.8520 |
+| `colsample_bytree` | 0.6270 |
+| `min_child_weight` | 1 |
+| `reg_alpha` | 0.000640 |
+| `reg_lambda` | 0.4710 |
+
+CV log-MAE = 0.1233.
+
+---
 
 ### Diferencias clave respecto al modelo A
 
@@ -404,7 +420,8 @@ Documento completo: `docs/data_cleaning.html` (previsualizar con Ctrl+Shift+V en
 | Tipo propiedad | no disponible | Departamento / PH / Casa |
 | Año | 2026 | 2020 |
 | Barrios | 46 | 57 |
-| Datos post-cleaning | 19.740 | 44.869 |
+| Datos post-cleaning | 19.793 | 44.869 |
+| Features totales | 41 | 43 (base 16 + 21 texto/título + 4 geo + 2 temporales) |
 
 ### Data cleaning — decisiones clave
 
@@ -503,3 +520,4 @@ Script: `scripts/eda_viz_venta.py` → `output/eda_venta/`
 | 2026-05-15 | Normalización de barrios: "Nuñez" y "San Nicolás" tenían codepoints latin-1 (U+00FA, U+00F1, U+00E1) por encoding del scraper. Agregada función _normalize_barrio() en clean_data.py que mapea cualquier variante Unicode al nombre canónico via _strip_accents. Nombres ahora correctos en exports. Run de producción (50 trials): R²=0.9242, MAE=$80, MAPE=7.8%, ±15%=80.3%. |
 | 2026-05-15 | Modelo B (ventas): portadas mejoras de alquileres — log-transform del target, precio_med_barrio (sin leakage), Optuna en log-space, métricas completas (MAPE/RMSE/±15%). R²=0.8683→0.8729, MAE=$42.573→$41.428 (−2.7%, --fast). EDA ventas generado: 6 gráficos en output/eda_venta/, documentados en modelo.md. |
 | 2026-05-20 | Feature engineering: exploradas columnas parcialmente nulas del dataset. Incorporadas 4 features nuevas: disposicion_enc (45% presente, ordinal Frente=3..Lateral=0, missing=−1), estado_enc (20% presente, ordinal calidad, missing=3), m2_por_bano, publisher_enc. luminosidad descartada (sin señal). Run de producción con 100 trials: R²=0.9242→0.9317, MAE=$80→$76, MAPE=7.8%→7.5%, ±15%=80.3%→81.5%, CV=0.0786→0.0760. |
+| 2026-05-21 | Modelo ventas (model_venta.py): 27 features nuevas — 21 text/título (amenities extraídos del texto, piso, condición, disposición), 4 geo (distancia a Obelisco, Puerto Madero, Palermo, Belgrano con corrección equirectangular), 2 temporales (dias_en_mercado, mes_publicacion) — + precio_med_barrio_tipo (barrio×property_type, calculada en train sin leakage). Early stopping: n_estimators=1000 ceiling, early_stopping_rounds=50. 100 trials Optuna. R²=0.8729→0.9195, MAE=$41.428→$31.289, MAPE=16.3%→12.4%, ±15%=56.9%→69.9%, CV=0.1233. |

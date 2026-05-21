@@ -15,13 +15,13 @@ Scraped 24,500 listings from ZonaProp, trained two XGBoost models tuned with Opt
 
 | | Rentals (ZonaProp 2026) | Sales (Properati 2020) |
 |---|---|---|
-| **R²** | **0.932** | 0.873 |
-| **MAE** | **$76 / month** | $41,400 |
-| **MAPE** | **7.5%** | 16.3% |
-| **Within ±15%** | **81.5%** of predictions | 56.9% |
+| **R²** | **0.932** | **0.920** |
+| **MAE** | **$76 / month** | **$31,289** |
+| **MAPE** | **7.5%** | **12.4%** |
+| **Within ±15%** | **81.5%** of predictions | **69.9%** |
 | Records | 19,793 | 44,869 |
 | Neighborhoods | 46 | 57 |
-| Features | 41 | 13 |
+| Features | 41 | 43 |
 
 > The sales model's higher error reflects structural difficulty: price range spans $57K–$1.58M (25× wider than rentals) with no amenity data available.
 
@@ -101,8 +101,8 @@ flowchart TD
     end
 
     subgraph VENTA["Sales Pipeline"]
-        B1["Properati Dataset\n~87,000 raw listings\n2020"] -->|"clean_data_venta.py\ndedup + filter"| B2["Cleaned Dataset\n44,869 rows · 13 features"]
-        B2 -->|"model_venta.py\nXGBoost + Optuna · 50 trials"| B3["Sales Model\nR² 0.873 · MAPE 16.3%"]
+        B1["Properati Dataset\n~87,000 raw listings\n2020"] -->|"clean_data_venta.py\ndedup + filter"| B2["Cleaned Dataset\n44,869 rows · 43 features"]
+        B2 -->|"model_venta.py\nXGBoost + Optuna · 100 trials"| B3["Sales Model\nR² 0.920 · MAPE 12.4%"]
         B3 -->|precompute grid| B4["data_venta.js"]
     end
 
@@ -134,7 +134,7 @@ Properati requires deduplication: 42,654 re-listings (46% of raw) removed, keepi
 
 ## Model
 
-### Feature Groups (Rentals — 37 total)
+### Feature Groups (Rentals — 41 total)
 
 | Group | Features |
 |-------|----------|
@@ -159,14 +159,14 @@ Bayesian search with Optuna (5-fold CV, MAE in log-space):
 
 | Parameter | Search range | Best (rentals) | Best (sales) |
 |-----------|-------------|----------------|--------------|
-| `n_estimators` | 200 – 1000 | 766 | 958 |
-| `max_depth` | 3 – 8 | 8 | 7 |
-| `learning_rate` | 0.01 – 0.3 | 0.063 | 0.045 |
-| `subsample` | 0.6 – 1.0 | 0.878 | 0.910 |
-| `colsample_bytree` | 0.6 – 1.0 | 0.601 | 0.654 |
-| `min_child_weight` | 1 – 10 | 4 | 2 |
-| `reg_alpha` | 1e-4 – 10 | 0.264 | 0.001 |
-| `reg_lambda` | 1e-4 – 10 | 1.903 | 0.025 |
+| `n_estimators` | ≤1000 (early stopping) | ≤1000 | ≤1000 |
+| `max_depth` | 3 – 8 | 8 | 8 |
+| `learning_rate` | 0.01 – 0.3 | 0.043 | 0.064 |
+| `subsample` | 0.6 – 1.0 | 0.914 | 0.852 |
+| `colsample_bytree` | 0.6 – 1.0 | 0.676 | 0.627 |
+| `min_child_weight` | 1 – 10 | 1 | 1 |
+| `reg_alpha` | 1e-4 – 10 | 0.063 | 0.00064 |
+| `reg_lambda` | 1e-4 – 10 | 0.00022 | 0.471 |
 
 ### Model Evolution (Rentals)
 

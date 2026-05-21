@@ -23,7 +23,7 @@ import numpy as np
 import optuna
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import KFold, cross_val_score, train_test_split
+from sklearn.model_selection import KFold, train_test_split
 from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBRegressor
 
@@ -175,7 +175,7 @@ def get_feature_cols(df: pd.DataFrame) -> list[str]:
 def tune(X_train: pd.DataFrame, y_train: pd.Series, n_trials: int) -> dict:
     def objective(trial):
         params = {
-            "n_estimators":     trial.suggest_int("n_estimators", 200, 1000),
+            "n_estimators":     1000,
             "max_depth":        trial.suggest_int("max_depth", 3, 8),
             "learning_rate":    trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
             "subsample":        trial.suggest_float("subsample", 0.6, 1.0),
@@ -184,12 +184,17 @@ def tune(X_train: pd.DataFrame, y_train: pd.Series, n_trials: int) -> dict:
             "reg_alpha":        trial.suggest_float("reg_alpha", 1e-4, 10.0, log=True),
             "reg_lambda":       trial.suggest_float("reg_lambda", 1e-4, 10.0, log=True),
         }
-        model = XGBRegressor(**params, random_state=42, n_jobs=-1, verbosity=0)
-        kf     = KFold(n_splits=5, shuffle=True, random_state=42)
-        scores = cross_val_score(
-            model, X_train, y_train, cv=kf, scoring="neg_mean_absolute_error"
-        )
-        return -scores.mean()
+        kf   = KFold(n_splits=5, shuffle=True, random_state=42)
+        maes = []
+        for tr, va in kf.split(X_train):
+            m = XGBRegressor(**params, early_stopping_rounds=50, random_state=42, n_jobs=-1, verbosity=0)
+            m.fit(
+                X_train.iloc[tr], y_train.iloc[tr],
+                eval_set=[(X_train.iloc[va], y_train.iloc[va])],
+                verbose=False,
+            )
+            maes.append(mean_absolute_error(y_train.iloc[va], m.predict(X_train.iloc[va])))
+        return float(np.mean(maes))
 
     study = optuna.create_study(direction="minimize")
     study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
@@ -197,8 +202,14 @@ def tune(X_train: pd.DataFrame, y_train: pd.Series, n_trials: int) -> dict:
 
 
 def train_final(X_train, X_test, y_train_log, y_test_raw, y_train_raw, best_params: dict):
-    model = XGBRegressor(**best_params, random_state=42, n_jobs=-1, verbosity=0)
-    model.fit(X_train, y_train_log)                     # entrena en log(precio)
+    # 10% del train como validación para early stopping (seed distinta al split principal)
+    X_tr, X_val, y_tr, y_val = train_test_split(
+        X_train, y_train_log, test_size=0.1, random_state=7
+    )
+    params = {"n_estimators": 1000, **best_params}
+    model  = XGBRegressor(**params, early_stopping_rounds=50, random_state=42, n_jobs=-1, verbosity=0)
+    model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
+    y_pred = np.expm1(model.predict(X_test))            # predice en USD reales
     y_pred = np.expm1(model.predict(X_test))            # predice en USD reales
     mae  = float(mean_absolute_error(y_test_raw, y_pred))
     rmse = float(np.sqrt(mean_squared_error(y_test_raw, y_pred)))
